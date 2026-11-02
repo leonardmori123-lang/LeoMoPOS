@@ -1,0 +1,31 @@
+# Visual Studio and .NET build output
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userprefs
+
+# Local database files and backups
+*.mdf
+*.ldf
+*.bak
+*.dacpac
+
+# Secrets and private configuration
+appsettings.local.json
+*.secrets.json
+EnterprisePOS/App.Release.config
+EnterprisePOS/connectionStrings.local.config
+
+# Logs and local media
+logs/
+*.log
+media/
+
+# Course handouts and receipts printed to PDF
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db

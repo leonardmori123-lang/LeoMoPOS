@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+    <startup>
+        <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" />
+    </startup>
+    <connectionStrings>
+        <!-- Replace YOUR_SQL_SERVER with the server name, for example .\SQLEXPRESS or MYPC\SQLEXPRESS.
+             This version uses Windows authentication, so it holds no password.
+             If you switch to SQL authentication, never commit the real password. -->
+        <add name="EnterprisePOS"
+             connectionString="Data Source=YOUR_SQL_SERVER;Initial Catalog=PosDB;Integrated Security=True;TrustServerCertificate=True;"
+             providerName="System.Data.SqlClient" />
+    </connectionStrings>
+</configuration>
