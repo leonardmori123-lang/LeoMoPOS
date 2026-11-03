@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 using EnterprisePOS.Domain;
 using EnterprisePOS.Services;
@@ -11,158 +10,325 @@ namespace EnterprisePOS
     // Admin only: the list of users with add and edit.
     public sealed class UserAdminForm : Form
     {
+        private const string FormTitle = "User & Role Management";
+        private const string DialogTitle = "Users";
+
         private readonly User currentUser;
-        private readonly UserService service = new UserService();
-        private List<User> loaded = new List<User>();
+        private readonly UserService userService = new UserService();
+        private List<User> loadedUsers = new List<User>();
 
-        private readonly Label lblSummary = new Label
-        {
-            Dock = DockStyle.Bottom,
-            Height = 28,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(8, 0, 0, 0)
-        };
-        private readonly DataGridView grid = new DataGridView
-        {
-            Dock = DockStyle.Fill,
-            BackgroundColor = Color.White,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AutoGenerateColumns = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            RowHeadersVisible = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
-        };
+        private Label summaryLabel;
+        private DataGridView userGrid;
+        private FlowLayoutPanel commandPanel;
+        private Button addButton;
+        private Button editButton;
+        private Button resetPasswordButton;
 
+        // Creates the user administration form.
         public UserAdminForm(User user)
         {
-            currentUser = user;
+            this.currentUser = user;
 
-            Text = "User & Role Management";
+            InitializeFormProperties();
+            InitializeControls();
+            BuildColumns();
+            BuildLayout();
+            AttachEvents();
+        }
+
+        // Sets the basic window properties.
+        private void InitializeFormProperties()
+        {
+            Text = FormTitle;
             Width = 850;
             Height = 520;
             StartPosition = FormStartPosition.CenterParent;
             AutoScaleMode = AutoScaleMode.Font;
-
-            var commands = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(8) };
-            var add = new Button { Text = "Add User", AutoSize = true };
-            var edit = new Button { Text = "Edit", AutoSize = true };
-            var reset = new Button { Text = "Reset Password", AutoSize = true };
-            add.Click += (s, e) => AddUser();
-            edit.Click += (s, e) => EditSelected();
-            reset.Click += (s, e) => ResetSelected();
-            grid.CellDoubleClick += (s, e) =>
-            {
-                if (e.RowIndex >= 0) EditSelected();
-            };
-            commands.Controls.Add(add);
-            commands.Controls.Add(edit);
-            commands.Controls.Add(reset);
-
-            BuildColumns();
-            grid.DataBindingComplete += (s, e) => StyleRows();
-
-            // Fill control first, then the bottom bar, then the top bar.
-            Controls.Add(grid);
-            Controls.Add(lblSummary);
-            Controls.Add(commands);
-
-            Load += (s, e) => LoadRows();
         }
 
+        // Creates the controls used on this form.
+        private void InitializeControls()
+        {
+            summaryLabel = new Label();
+            summaryLabel.Dock = DockStyle.Bottom;
+            summaryLabel.Height = 28;
+            summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
+            summaryLabel.Padding = new Padding(8, 0, 0, 0);
+
+            userGrid = new DataGridView();
+            userGrid.Dock = DockStyle.Fill;
+            userGrid.BackgroundColor = Color.White;
+            userGrid.ReadOnly = true;
+            userGrid.AllowUserToAddRows = false;
+            userGrid.AllowUserToDeleteRows = false;
+            userGrid.AutoGenerateColumns = false;
+            userGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            userGrid.MultiSelect = false;
+            userGrid.RowHeadersVisible = false;
+            userGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+
+            commandPanel = new FlowLayoutPanel();
+            commandPanel.Dock = DockStyle.Top;
+            commandPanel.Height = 48;
+            commandPanel.Padding = new Padding(8);
+
+            addButton = new Button();
+            addButton.Text = "Add User";
+            addButton.AutoSize = true;
+
+            editButton = new Button();
+            editButton.Text = "Edit";
+            editButton.AutoSize = true;
+
+            resetPasswordButton = new Button();
+            resetPasswordButton.Text = "Reset Password";
+            resetPasswordButton.AutoSize = true;
+        }
+
+        // Sets up the table columns for the users grid.
         private void BuildColumns()
         {
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id", DataPropertyName = "Id", Visible = false });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Username", HeaderText = "Username", DataPropertyName = "Username", FillWeight = 25 });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "FullName", HeaderText = "Full name", DataPropertyName = "FullName", FillWeight = 35 });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Role", HeaderText = "Role", DataPropertyName = "Role", FillWeight = 15 });
-            grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "IsActive", HeaderText = "Active", DataPropertyName = "IsActive", FillWeight = 10 });
+            DataGridViewTextBoxColumn idColumn = new DataGridViewTextBoxColumn();
+            idColumn.Name = "Id";
+            idColumn.DataPropertyName = "Id";
+            idColumn.Visible = false;
+            userGrid.Columns.Add(idColumn);
 
-            var lastLogin = new DataGridViewTextBoxColumn { Name = "LastLoginAt", HeaderText = "Last login", DataPropertyName = "LastLoginAt", FillWeight = 25 };
-            lastLogin.DefaultCellStyle.Format = "yyyy-MM-dd HH:mm";
-            lastLogin.DefaultCellStyle.NullValue = "never";
-            grid.Columns.Add(lastLogin);
+            DataGridViewTextBoxColumn usernameColumn = new DataGridViewTextBoxColumn();
+            usernameColumn.Name = "Username";
+            usernameColumn.HeaderText = "Username";
+            usernameColumn.DataPropertyName = "Username";
+            usernameColumn.FillWeight = 25;
+            userGrid.Columns.Add(usernameColumn);
+
+            DataGridViewTextBoxColumn fullNameColumn = new DataGridViewTextBoxColumn();
+            fullNameColumn.Name = "FullName";
+            fullNameColumn.HeaderText = "Full name";
+            fullNameColumn.DataPropertyName = "FullName";
+            fullNameColumn.FillWeight = 35;
+            userGrid.Columns.Add(fullNameColumn);
+
+            DataGridViewTextBoxColumn roleColumn = new DataGridViewTextBoxColumn();
+            roleColumn.Name = "Role";
+            roleColumn.HeaderText = "Role";
+            roleColumn.DataPropertyName = "Role";
+            roleColumn.FillWeight = 15;
+            userGrid.Columns.Add(roleColumn);
+
+            DataGridViewCheckBoxColumn activeColumn = new DataGridViewCheckBoxColumn();
+            activeColumn.Name = "IsActive";
+            activeColumn.HeaderText = "Active";
+            activeColumn.DataPropertyName = "IsActive";
+            activeColumn.FillWeight = 10;
+            userGrid.Columns.Add(activeColumn);
+
+            DataGridViewTextBoxColumn lastLoginColumn = new DataGridViewTextBoxColumn();
+            lastLoginColumn.Name = "LastLoginAt";
+            lastLoginColumn.HeaderText = "Last login";
+            lastLoginColumn.DataPropertyName = "LastLoginAt";
+            lastLoginColumn.FillWeight = 25;
+            lastLoginColumn.DefaultCellStyle.Format = "yyyy-MM-dd HH:mm";
+            lastLoginColumn.DefaultCellStyle.NullValue = "never";
+            userGrid.Columns.Add(lastLoginColumn);
         }
 
+        // Adds the controls to the form in docking order.
+        private void BuildLayout()
+        {
+            commandPanel.Controls.Add(addButton);
+            commandPanel.Controls.Add(editButton);
+            commandPanel.Controls.Add(resetPasswordButton);
+
+            // Fill control first, then the bottom bar, then the top bar.
+            Controls.Add(userGrid);
+            Controls.Add(summaryLabel);
+            Controls.Add(commandPanel);
+        }
+
+        // Hooks up event handlers in one place.
+        private void AttachEvents()
+        {
+            addButton.Click += AddButton_Click;
+            editButton.Click += EditButton_Click;
+            resetPasswordButton.Click += ResetPasswordButton_Click;
+            userGrid.CellDoubleClick += UserGrid_CellDoubleClick;
+            userGrid.DataBindingComplete += UserGrid_DataBindingComplete;
+            Load += UserAdminForm_Load;
+        }
+
+        // Loads user data when the form opens.
+        private void UserAdminForm_Load(object sender, EventArgs e)
+        {
+            LoadRows();
+        }
+
+        // Handles the click on the Add User button.
+        private void AddButton_Click(object sender, EventArgs e)
+        {
+            AddUser();
+        }
+
+        // Handles the click on the Edit button.
+        private void EditButton_Click(object sender, EventArgs e)
+        {
+            EditSelected();
+        }
+
+        // Handles the click on the Reset Password button.
+        private void ResetPasswordButton_Click(object sender, EventArgs e)
+        {
+            ResetSelected();
+        }
+
+        // Opens the editor when a row is double-clicked.
+        private void UserGrid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0)
+            {
+                EditSelected();
+            }
+        }
+
+        // Applies row styling after data binding completes.
+        private void UserGrid_DataBindingComplete(object sender, DataGridViewBindingCompleteEventArgs e)
+        {
+            StyleRows();
+        }
+
+        // Fetches users from the service and populates the grid.
         private void LoadRows()
         {
             try
             {
-                loaded = service.List(currentUser);
+                loadedUsers = userService.List(currentUser);
 
-                grid.DataSource = loaded.Select(u => new
+                List<UserRowViewModel> rowList = new List<UserRowViewModel>();
+                int inactiveCount = 0;
+
+                foreach (User user in loadedUsers)
                 {
-                    u.Id,
-                    u.Username,
-                    u.FullName,
-                    Role = u.Role.ToString(),
-                    u.IsActive,
-                    u.LastLoginAt
-                }).ToList();
+                    UserRowViewModel viewModel = new UserRowViewModel();
+                    viewModel.Id = user.Id;
+                    viewModel.Username = user.Username;
+                    viewModel.FullName = user.FullName;
+                    viewModel.Role = user.Role.ToString();
+                    viewModel.IsActive = user.IsActive;
+                    viewModel.LastLoginAt = user.LastLoginAt;
+                    rowList.Add(viewModel);
 
-                int inactive = loaded.Count(u => !u.IsActive);
-                lblSummary.Text = loaded.Count + " users, " + inactive + " inactive (shown in grey)";
+                    if (!user.IsActive)
+                    {
+                        inactiveCount++;
+                    }
+                }
+
+                userGrid.DataSource = rowList;
+                summaryLabel.Text = loadedUsers.Count + " users, " + inactiveCount + " inactive (shown in grey)";
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Users", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, DialogTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
+        // Opens the editor dialog to create a new user.
         private void AddUser()
         {
-            using (var editor = new UserEditorForm(currentUser))
+            using (UserEditorForm editor = new UserEditorForm(currentUser))
             {
-                if (editor.ShowDialog(this) == DialogResult.OK) LoadRows();
+                if (editor.ShowDialog(this) == DialogResult.OK)
+                {
+                    LoadRows();
+                }
             }
         }
 
+        // Opens the editor dialog for the currently selected user.
         private void EditSelected()
         {
-            if (grid.CurrentRow == null)
+            if (userGrid.CurrentRow == null)
             {
-                MessageBox.Show("Select a user first.", "Users");
+                MessageBox.Show("Select a user first.", DialogTitle);
                 return;
             }
 
-            int id = Convert.ToInt32(grid.CurrentRow.Cells["Id"].Value);
-            var selected = loaded.FirstOrDefault(u => u.Id == id);
-            if (selected == null) return;
-
-            using (var editor = new UserEditorForm(currentUser, selected))
+            int id = Convert.ToInt32(userGrid.CurrentRow.Cells["Id"].Value);
+            User selected = FindLoadedUserById(id);
+            if (selected == null)
             {
-                if (editor.ShowDialog(this) == DialogResult.OK) LoadRows();
+                return;
+            }
+
+            using (UserEditorForm editor = new UserEditorForm(currentUser, selected))
+            {
+                if (editor.ShowDialog(this) == DialogResult.OK)
+                {
+                    LoadRows();
+                }
             }
         }
 
+        // Opens the password reset dialog for the currently selected user.
         private void ResetSelected()
         {
-            if (grid.CurrentRow == null)
+            if (userGrid.CurrentRow == null)
             {
-                MessageBox.Show("Select a user first.", "Users");
+                MessageBox.Show("Select a user first.", DialogTitle);
                 return;
             }
 
-            int id = Convert.ToInt32(grid.CurrentRow.Cells["Id"].Value);
-            var selected = loaded.FirstOrDefault(u => u.Id == id);
-            if (selected == null) return;
+            int id = Convert.ToInt32(userGrid.CurrentRow.Cells["Id"].Value);
+            User selected = FindLoadedUserById(id);
+            if (selected == null)
+            {
+                return;
+            }
 
-            using (var form = new ResetPasswordForm(currentUser, selected))
+            using (ResetPasswordForm form = new ResetPasswordForm(currentUser, selected))
             {
                 form.ShowDialog(this);
             }
         }
 
+        // Finds a user in the loaded list by user ID.
+        private User FindLoadedUserById(int userId)
+        {
+            foreach (User user in loadedUsers)
+            {
+                if (user.Id == userId)
+                {
+                    return user;
+                }
+            }
+            return null;
+        }
+
         // Grey text for inactive users
         private void StyleRows()
         {
-            foreach (DataGridViewRow row in grid.Rows)
+            foreach (DataGridViewRow row in userGrid.Rows)
             {
                 bool active = (bool)row.Cells["IsActive"].Value;
-                row.DefaultCellStyle.ForeColor = active ? Color.Black : Color.Gray;
+                if (active)
+                {
+                    row.DefaultCellStyle.ForeColor = Color.Black;
+                }
+                else
+                {
+                    row.DefaultCellStyle.ForeColor = Color.Gray;
+                }
             }
+        }
+
+        // View model used to bind user list data to the grid.
+        private sealed class UserRowViewModel
+        {
+            public int Id { get; set; }
+            public string Username { get; set; }
+            public string FullName { get; set; }
+            public string Role { get; set; }
+            public bool IsActive { get; set; }
+            public DateTime? LastLoginAt { get; set; }
         }
     }
 }
