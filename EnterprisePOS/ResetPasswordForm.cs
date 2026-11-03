@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using EnterprisePOS.Domain;
@@ -9,18 +9,31 @@ namespace EnterprisePOS
     // Admin sets a new password for one user. The old password is not asked for.
     public sealed class ResetPasswordForm : Form
     {
+        private const string FormTitle = "Reset Password";
+
         private readonly User currentUser;
-        private readonly User target;
+        private readonly User targetUser;
 
-        private readonly TextBox password = new TextBox { MaxLength = 100, UseSystemPasswordChar = true };
-        private readonly TextBox confirm = new TextBox { MaxLength = 100, UseSystemPasswordChar = true };
+        private TextBox passwordTextBox;
+        private TextBox confirmTextBox;
+        private Button cancelButton;
+        private Button saveButton;
 
+        // Creates the reset password form for the given user.
         public ResetPasswordForm(User actor, User targetUser)
         {
-            currentUser = actor;
-            target = targetUser;
+            this.currentUser = actor;
+            this.targetUser = targetUser;
 
-            Text = "Reset Password";
+            InitializeFormProperties();
+            InitializeInputControls();
+            BuildLayout();
+        }
+
+        // Sets the basic window properties.
+        private void InitializeFormProperties()
+        {
+            Text = FormTitle;
             Width = 460;
             Height = 290;
             StartPosition = FormStartPosition.CenterParent;
@@ -28,66 +41,106 @@ namespace EnterprisePOS
             MaximizeBox = false;
             MinimizeBox = false;
             AutoScaleMode = AutoScaleMode.Font;
+        }
 
-            var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 5 };
+        // Creates the password text boxes.
+        private void InitializeInputControls()
+        {
+            passwordTextBox = new TextBox();
+            passwordTextBox.MaxLength = 100;
+            passwordTextBox.UseSystemPasswordChar = true;
+
+            confirmTextBox = new TextBox();
+            confirmTextBox.MaxLength = 100;
+            confirmTextBox.UseSystemPasswordChar = true;
+        }
+
+        // Builds the table layout and adds all child controls.
+        private void BuildLayout()
+        {
+            TableLayoutPanel table = new TableLayoutPanel();
+            table.Dock = DockStyle.Fill;
+            table.Padding = new Padding(18);
+            table.ColumnCount = 3;
+            table.RowCount = 5;
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
 
-            var who = new Label
-            {
-                Text = "New password for " + target.Username + " (" + target.FullName + ")",
-                UseMnemonic = false,
-                AutoSize = true,
-                MaximumSize = new Size(390, 0),
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                Margin = new Padding(3, 3, 3, 12)
-            };
-            table.Controls.Add(who, 0, 0);
-            table.SetColumnSpan(who, 3);
+            Label headerLabel = new Label();
+            headerLabel.Text = "New password for " + targetUser.Username + " (" + targetUser.FullName + ")";
+            headerLabel.UseMnemonic = false;
+            headerLabel.AutoSize = true;
+            headerLabel.MaximumSize = new Size(390, 0);
+            headerLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+            headerLabel.Margin = new Padding(3, 3, 3, 12);
+            table.Controls.Add(headerLabel, 0, 0);
+            table.SetColumnSpan(headerLabel, 3);
 
-            AddRow(table, "New password", password, 1);
-            AddRow(table, "Confirm password", confirm, 2);
+            AddRow(table, "New password", passwordTextBox, 1);
+            AddRow(table, "Confirm password", confirmTextBox, 2);
 
-            var hint = new Label { Text = "At least 8 characters.", AutoSize = true, ForeColor = Color.DimGray };
-            table.Controls.Add(hint, 1, 3);
+            Label hintLabel = new Label();
+            hintLabel.Text = "At least 8 characters.";
+            hintLabel.AutoSize = true;
+            hintLabel.ForeColor = Color.DimGray;
+            table.Controls.Add(hintLabel, 1, 3);
 
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Top | AnchorStyles.Right };
-            var save = new Button { Text = "Save" };
-            save.Click += Save;
-            table.Controls.Add(cancel, 1, 4);
-            table.Controls.Add(save, 2, 4);
+            cancelButton = new Button();
+            cancelButton.Text = "Cancel";
+            cancelButton.DialogResult = DialogResult.Cancel;
+            cancelButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-            AcceptButton = save;
-            CancelButton = cancel;
+            saveButton = new Button();
+            saveButton.Text = "Save";
+            saveButton.Click += SaveButton_Click;
+
+            table.Controls.Add(cancelButton, 1, 4);
+            table.Controls.Add(saveButton, 2, 4);
+
+            AcceptButton = saveButton;
+            CancelButton = cancelButton;
             Controls.Add(table);
         }
 
-        private static void AddRow(TableLayoutPanel table, string label, Control control, int row)
-        {
-            table.Controls.Add(new Label { Text = label, AutoSize = true }, 0, row);
-            control.Dock = DockStyle.Top;
-            table.Controls.Add(control, 1, row);
-        }
-
-        private void Save(object sender, EventArgs e)
+        // Validates input and saves the new password.
+        private void SaveButton_Click(object sender, EventArgs e)
         {
             try
             {
-                if (password.Text != confirm.Text)
+                if (passwordTextBox.Text != confirmTextBox.Text)
+                {
                     throw new InvalidOperationException("The two passwords do not match.");
+                }
 
-                new UserService().ResetPassword(currentUser, target.Id, password.Text);
+                UserService userService = new UserService();
+                userService.ResetPassword(currentUser, targetUser.Id, passwordTextBox.Text);
 
-                MessageBox.Show("Password changed for " + target.Username + ".", "Reset Password",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(
+                    "Password changed for " + targetUser.Username + ".",
+                    FormTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
                 DialogResult = DialogResult.OK;
                 Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Reset Password", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, FormTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        // Adds a labeled control row to the table layout.
+        private static void AddRow(TableLayoutPanel table, string labelText, Control control, int row)
+        {
+            Label label = new Label();
+            label.Text = labelText;
+            label.AutoSize = true;
+            table.Controls.Add(label, 0, row);
+
+            control.Dock = DockStyle.Top;
+            table.Controls.Add(control, 1, row);
         }
     }
 }
