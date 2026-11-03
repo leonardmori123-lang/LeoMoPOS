@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using EnterprisePOS.Domain;
@@ -10,133 +10,235 @@ namespace EnterprisePOS
     // password is left alone.
     public sealed class UserEditorForm : Form
     {
+        private const string AddUserTitle = "Add User";
+        private const string EditUserTitle = "Edit User";
+        private const string ValidationDialogTitle = "User validation";
+
         private readonly User currentUser;
-        private readonly User existing;
+        private readonly User existingUser;
 
-        private readonly TextBox username = new TextBox { MaxLength = 50 };
-        private readonly TextBox fullName = new TextBox { MaxLength = 100 };
-        private readonly TextBox password = new TextBox { MaxLength = 100, UseSystemPasswordChar = true };
-        private readonly TextBox confirm = new TextBox { MaxLength = 100, UseSystemPasswordChar = true };
-        private readonly ComboBox role = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-        private readonly CheckBox active = new CheckBox { Text = "Active", Checked = true, AutoSize = true };
+        private TextBox usernameTextBox;
+        private TextBox fullNameTextBox;
+        private TextBox passwordTextBox;
+        private TextBox confirmTextBox;
+        private ComboBox roleComboBox;
+        private CheckBox activeCheckBox;
+        private Button cancelButton;
+        private Button saveButton;
 
+        // Creates a new editor form for adding or editing a user account.
         public UserEditorForm(User actor, User existingUser = null)
         {
-            currentUser = actor;
-            existing = existingUser;
-            bool isNew = existing == null;
-            bool editingSelf = !isNew && existing.Id == currentUser.Id;
+            this.currentUser = actor;
+            this.existingUser = existingUser;
 
-            Text = isNew ? "Add User" : "Edit User";
+            bool isNew = (this.existingUser == null);
+            bool editingSelf = (!isNew && this.existingUser.Id == this.currentUser.Id);
+
+            InitializeFormProperties(isNew);
+            InitializeControls();
+            BuildLayout(isNew, editingSelf);
+            PopulateInitialValues(isNew, editingSelf);
+            AttachEvents();
+        }
+
+        // Sets the basic window properties.
+        private void InitializeFormProperties(bool isNew)
+        {
+            if (isNew)
+            {
+                Text = AddUserTitle;
+                Height = 360;
+            }
+            else
+            {
+                Text = EditUserTitle;
+                Height = 330;
+            }
+
             Width = 480;
-            Height = isNew ? 360 : 330;
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             AutoScaleMode = AutoScaleMode.Font;
+        }
 
-            role.DataSource = Enum.GetValues(typeof(UserRole));
+        // Creates the input controls.
+        private void InitializeControls()
+        {
+            usernameTextBox = new TextBox();
+            usernameTextBox.MaxLength = 50;
 
-            var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3 };
+            fullNameTextBox = new TextBox();
+            fullNameTextBox.MaxLength = 100;
+
+            passwordTextBox = new TextBox();
+            passwordTextBox.MaxLength = 100;
+            passwordTextBox.UseSystemPasswordChar = true;
+
+            confirmTextBox = new TextBox();
+            confirmTextBox.MaxLength = 100;
+            confirmTextBox.UseSystemPasswordChar = true;
+
+            roleComboBox = new ComboBox();
+            roleComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            roleComboBox.DataSource = Enum.GetValues(typeof(UserRole));
+
+            activeCheckBox = new CheckBox();
+            activeCheckBox.Text = "Active";
+            activeCheckBox.Checked = true;
+            activeCheckBox.AutoSize = true;
+
+            cancelButton = new Button();
+            cancelButton.Text = "Cancel";
+            cancelButton.DialogResult = DialogResult.Cancel;
+            cancelButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            saveButton = new Button();
+            saveButton.Text = "Save";
+        }
+
+        // Arranges controls in a table layout.
+        private void BuildLayout(bool isNew, bool editingSelf)
+        {
+            TableLayoutPanel table = new TableLayoutPanel();
+            table.Dock = DockStyle.Fill;
+            table.Padding = new Padding(18);
+            table.ColumnCount = 3;
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
 
             int row = 0;
-            AddRow(table, "Username", username, row++);
-            AddRow(table, "Full name", fullName, row++);
+            AddRow(table, "Username", usernameTextBox, row);
+            row++;
+
+            AddRow(table, "Full name", fullNameTextBox, row);
+            row++;
 
             if (isNew)
             {
-                AddRow(table, "Password", password, row++);
-                AddRow(table, "Confirm password", confirm, row++);
+                AddRow(table, "Password", passwordTextBox, row);
+                row++;
+
+                AddRow(table, "Confirm password", confirmTextBox, row);
+                row++;
             }
 
-            AddRow(table, "Role", role, row++);
+            AddRow(table, "Role", roleComboBox, row);
+            row++;
 
             if (!isNew)
             {
-                table.Controls.Add(active, 1, row++);
+                table.Controls.Add(activeCheckBox, 1, row);
+                row++;
             }
 
             if (editingSelf)
             {
-                var note = new Label
-                {
-                    Text = "This is your own account, so the role and active setting are locked.",
-                    AutoSize = true,
-                    MaximumSize = new Size(300, 0),
-                    ForeColor = Color.DimGray
-                };
-                table.Controls.Add(note, 1, row++);
+                Label noteLabel = new Label();
+                noteLabel.Text = "This is your own account, so the role and active setting are locked.";
+                noteLabel.AutoSize = true;
+                noteLabel.MaximumSize = new Size(300, 0);
+                noteLabel.ForeColor = Color.DimGray;
+                table.Controls.Add(noteLabel, 1, row);
+                row++;
             }
 
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Top | AnchorStyles.Right };
-            var save = new Button { Text = "Save" };
-            save.Click += Save;
-            table.Controls.Add(cancel, 1, row);
-            table.Controls.Add(save, 2, row);
+            table.Controls.Add(cancelButton, 1, row);
+            table.Controls.Add(saveButton, 2, row);
             table.RowCount = row + 1;
 
-            AcceptButton = save;
-            CancelButton = cancel;
+            AcceptButton = saveButton;
+            CancelButton = cancelButton;
             Controls.Add(table);
+        }
 
+        // Loads initial values into controls depending on whether creating or editing.
+        private void PopulateInitialValues(bool isNew, bool editingSelf)
+        {
             if (isNew)
             {
-                role.SelectedItem = UserRole.Cashier;
+                roleComboBox.SelectedItem = UserRole.Cashier;
             }
             else
             {
-                username.Text = existing.Username;
-                username.ReadOnly = true;
-                fullName.Text = existing.FullName;
-                role.SelectedItem = existing.Role;
-                active.Checked = existing.IsActive;
+                usernameTextBox.Text = existingUser.Username;
+                usernameTextBox.ReadOnly = true;
+                fullNameTextBox.Text = existingUser.FullName;
+                roleComboBox.SelectedItem = existingUser.Role;
+                activeCheckBox.Checked = existingUser.IsActive;
 
                 if (editingSelf)
                 {
-                    role.Enabled = false;
-                    active.Enabled = false;
+                    roleComboBox.Enabled = false;
+                    activeCheckBox.Enabled = false;
                 }
             }
         }
 
-        private static void AddRow(TableLayoutPanel table, string label, Control control, int row)
+        // Hooks up event handlers.
+        private void AttachEvents()
         {
-            table.Controls.Add(new Label { Text = label, AutoSize = true }, 0, row);
-            control.Dock = DockStyle.Top;
-            table.Controls.Add(control, 1, row);
+            saveButton.Click += SaveButton_Click;
         }
 
-        private void Save(object sender, EventArgs e)
+        // Validates inputs and creates or updates the user account.
+        private void SaveButton_Click(object sender, EventArgs e)
         {
             try
             {
-                if (existing == null && password.Text != confirm.Text)
-                    throw new InvalidOperationException("The two passwords do not match.");
-
-                var user = new User
+                if (existingUser == null && passwordTextBox.Text != confirmTextBox.Text)
                 {
-                    Id = existing == null ? 0 : existing.Id,
-                    Username = username.Text,
-                    FullName = fullName.Text,
-                    Role = (UserRole)role.SelectedItem,
-                    IsActive = existing == null || active.Checked
-                };
+                    throw new InvalidOperationException("The two passwords do not match.");
+                }
 
-                var service = new UserService();
-                if (existing == null) service.Create(currentUser, user, password.Text);
-                else service.Update(currentUser, user);
+                User user = new User();
+                if (existingUser == null)
+                {
+                    user.Id = 0;
+                    user.IsActive = true;
+                }
+                else
+                {
+                    user.Id = existingUser.Id;
+                    user.IsActive = activeCheckBox.Checked;
+                }
+
+                user.Username = usernameTextBox.Text;
+                user.FullName = fullNameTextBox.Text;
+                user.Role = (UserRole)roleComboBox.SelectedItem;
+
+                UserService service = new UserService();
+                if (existingUser == null)
+                {
+                    service.Create(currentUser, user, passwordTextBox.Text);
+                }
+                else
+                {
+                    service.Update(currentUser, user);
+                }
 
                 DialogResult = DialogResult.OK;
                 Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "User validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, ValidationDialogTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        // Adds a labeled control row to the table layout.
+        private static void AddRow(TableLayoutPanel table, string labelText, Control control, int row)
+        {
+            Label label = new Label();
+            label.Text = labelText;
+            label.AutoSize = true;
+            table.Controls.Add(label, 0, row);
+
+            control.Dock = DockStyle.Top;
+            table.Controls.Add(control, 1, row);
         }
     }
 }
