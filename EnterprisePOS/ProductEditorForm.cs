@@ -58,7 +58,16 @@ namespace EnterprisePOS
 
             // Stock is only typed in for a new product. Later changes go through an inventory adjustment.
             stock.ReadOnly = productId != 0;
-            AddRow(table, productId == 0 ? "Stock" : "Stock (view only)", stock, 6);
+            string stockLabel;
+            if (productId == 0)
+            {
+                stockLabel = "Stock";
+            }
+            else
+            {
+                stockLabel = "Stock (view only)";
+            }
+            AddRow(table, stockLabel, stock, 6);
 
             AddRow(table, "Reorder level", reorder, 7);
             AddRow(table, "Image", imageName, 8);
@@ -71,7 +80,7 @@ namespace EnterprisePOS
             {
                 table.Controls.Add(active, 1, 9);
             }
-                
+
             var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             var save = new Button { Text = "Save" };
             save.Click += Save;
