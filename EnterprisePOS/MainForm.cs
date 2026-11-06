@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -12,6 +13,8 @@ namespace EnterprisePOS
     // Navigation, role-aware menus, and the day's numbers for admins and managers.
     public sealed class MainForm : Form
     {
+        private const string DefaultDash = "-";
+
         private readonly User currentUser;
         private readonly bool canManage;
         private readonly ReportingService reports = new ReportingService();
@@ -56,13 +59,9 @@ namespace EnterprisePOS
                 var admin = new ToolStripMenuItem("Administration");
                 admin.DropDownItems.Add("Users", null, (s, e) => ShowChild(new UserAdminForm(currentUser)));
                 admin.DropDownItems.Add(new ToolStripSeparator());
-                admin.DropDownItems.Add("Check database connection", null, (s, e) => CheckConnection());
-                admin.DropDownItems.Add("Open log folder", null, (s, e) => OpenLogFolder());
-                admin.DropDownItems.Add("Simulate error (test)", null, (s, e) =>
-                {
-                    // Goes through the same path as a real unexpected error: logged, safe message, program keeps running.
-                    throw new InvalidOperationException("Test error from the Administration menu.");
-                });
+                admin.DropDownItems.Add("Check database connection", null, CheckConnectionMenuItem_Click);
+                admin.DropDownItems.Add("Open log folder", null, OpenLogFolderMenuItem_Click);
+                admin.DropDownItems.Add("Simulate error (test)", null, SimulateErrorMenuItem_Click);
                 menu.Items.Add(admin);
             }
 
@@ -110,7 +109,10 @@ namespace EnterprisePOS
             body.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
             body.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
             body.Controls.Add(title, 0, 0);
-            if (canManage) body.Controls.Add(tiles, 0, 1);
+            if (canManage)
+            {
+                body.Controls.Add(tiles, 0, 1);
+            }
             body.Controls.Add(shortcuts, 0, 2);
 
             // The Fill control goes in first, the menu last, so the menu docks at the top.
@@ -119,7 +121,28 @@ namespace EnterprisePOS
             MainMenuStrip = menu;
 
             // Database calls wait for the Load event, not the constructor.
-            Load += (s, e) => RefreshDashboard();
+            Load += MainForm_Load;
+        }
+
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            RefreshDashboard();
+        }
+
+        private void CheckConnectionMenuItem_Click(object sender, EventArgs e)
+        {
+            CheckConnection();
+        }
+
+        private void OpenLogFolderMenuItem_Click(object sender, EventArgs e)
+        {
+            OpenLogFolder();
+        }
+
+        private void SimulateErrorMenuItem_Click(object sender, EventArgs e)
+        {
+            // Goes through the same path as a real unexpected error: logged, safe message, program keeps running.
+            throw new InvalidOperationException("Test error from the Administration menu.");
         }
 
         // Opens a screen as a dialog, then updates the numbers, since a sale or stock change may have happened.
@@ -137,7 +160,7 @@ namespace EnterprisePOS
         {
             try
             {
-                using (var connection = Db.Open())
+                using (SqlConnection connection = Db.Open())
                 {
                     MessageBox.Show(
                         "Connected to database \"" + connection.Database + "\" on " + connection.DataSource + ".",
@@ -165,24 +188,34 @@ namespace EnterprisePOS
 
         private void RefreshDashboard()
         {
-            if (!canManage) return;
+            if (!canManage)
+            {
+                return;
+            }
 
             try
             {
-                var stats = reports.GetDashboard(currentUser);
+                DashboardStats stats = reports.GetDashboard(currentUser);
                 lblSales.Text = stats.TodaySales.ToString("N2");
                 lblOrders.Text = stats.TodayOrders.ToString();
                 lblLowStock.Text = stats.LowStockCount.ToString();
-                lblLowStock.ForeColor = stats.LowStockCount > 0 ? Color.Firebrick : Color.DarkSlateBlue;
+                if (stats.LowStockCount > 0)
+                {
+                    lblLowStock.ForeColor = Color.Firebrick;
+                }
+                else
+                {
+                    lblLowStock.ForeColor = Color.DarkSlateBlue;
+                }
                 lblProducts.Text = stats.ActiveProducts.ToString();
             }
             catch
             {
                 // The numbers are a convenience. If they cannot load, show dashes and let the rest work.
-                lblSales.Text = "-";
-                lblOrders.Text = "-";
-                lblLowStock.Text = "-";
-                lblProducts.Text = "-";
+                lblSales.Text = DefaultDash;
+                lblOrders.Text = DefaultDash;
+                lblLowStock.Text = DefaultDash;
+                lblProducts.Text = DefaultDash;
             }
         }
 
@@ -190,7 +223,7 @@ namespace EnterprisePOS
         {
             return new Label
             {
-                Text = "-",
+                Text = DefaultDash,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 20, FontStyle.Bold),
                 ForeColor = Color.DarkSlateBlue
@@ -199,7 +232,7 @@ namespace EnterprisePOS
 
         private static Panel MakeTile(string caption, Label value)
         {
-            var tile = new Panel
+            Panel tile = new Panel
             {
                 Width = 210,
                 Height = 90,
@@ -207,7 +240,7 @@ namespace EnterprisePOS
                 BackColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle
             };
-            var label = new Label
+            Label label = new Label
             {
                 Text = caption,
                 Dock = DockStyle.Top,
