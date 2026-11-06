@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -67,7 +67,10 @@ namespace EnterprisePOS
             browse.Click += BrowseImage;
             table.Controls.Add(browse, 2, 8);
 
-            if (productId != 0) table.Controls.Add(active, 1, 9);
+            if (productId != 0)
+            {
+                table.Controls.Add(active, 1, 9);
+            }
                 
             var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             var save = new Button { Text = "Save" };
@@ -94,7 +97,7 @@ namespace EnterprisePOS
         {
             try
             {
-                var service = new InventoryService();
+                InventoryService service = new InventoryService();
 
                 category.DataSource = service.Categories();
                 category.DisplayMember = "Name";
@@ -108,19 +111,13 @@ namespace EnterprisePOS
                     return;
                 }
 
-                var existing = service.GetProduct(productId);
-                if (existing == null) throw new InvalidOperationException("Product not found.");
+                Product existing = service.GetProduct(productId);
+                if (existing == null)
+                {
+                    throw new InvalidOperationException("Product not found.");
+                }
 
-                sku.Text = existing.Sku;
-                barcode.Text = existing.Barcode;
-                name.Text = existing.Name;
-                category.SelectedValue = existing.CategoryId;
-                cost.Text = existing.Cost.ToString("0.00", CultureInfo.CurrentCulture);
-                price.Text = existing.Price.ToString("0.00", CultureInfo.CurrentCulture);
-                stock.Text = existing.StockQty.ToString(CultureInfo.InvariantCulture);
-                reorder.Text = existing.ReorderLevel.ToString(CultureInfo.InvariantCulture);
-                imageName.Text = existing.Image == null ? "(none)" : "(current image kept)";
-                active.Checked = existing.IsActive;
+                PopulateExistingProduct(existing);
             }
             catch (Exception ex)
             {
@@ -133,15 +130,21 @@ namespace EnterprisePOS
         {
             using (var dialog = new OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png", CheckFileExists = true })
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
 
                 try
                 {
-                    var info = new FileInfo(dialog.FileName);
-                    if (info.Length > MaxImageBytes) throw new InvalidOperationException("The image must be 1 MB or smaller.");
+                    FileInfo info = new FileInfo(dialog.FileName);
+                    if (info.Length > MaxImageBytes)
+                    {
+                        throw new InvalidOperationException("The image must be 1 MB or smaller.");
+                    }
 
-                    var bytes = File.ReadAllBytes(dialog.FileName);
-                    using (var stream = new MemoryStream(bytes))
+                    byte[] bytes = File.ReadAllBytes(dialog.FileName);
+                    using (MemoryStream stream = new MemoryStream(bytes))
                     using (Image.FromStream(stream))
                     {
                         // Opening it proves the file really is a picture.
@@ -172,17 +175,27 @@ namespace EnterprisePOS
                 int reorderValue;
 
                 if (!decimal.TryParse(cost.Text.Trim(), NumberStyles.Number, CultureInfo.CurrentCulture, out costValue))
+                {
                     throw new InvalidOperationException("Cost price must be a number, for example 12.50.");
+                }
                 if (!decimal.TryParse(price.Text.Trim(), NumberStyles.Number, CultureInfo.CurrentCulture, out priceValue))
+                {
                     throw new InvalidOperationException("Selling price must be a number, for example 15.00.");
+                }
                 if (productId == 0 && !int.TryParse(stock.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out stockValue))
+                {
                     throw new InvalidOperationException("Stock must be a whole number.");
+                }
                 if (!int.TryParse(reorder.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out reorderValue))
+                {
                     throw new InvalidOperationException("Reorder level must be a whole number.");
+                }
                 if (category.SelectedValue == null)
+                {
                     throw new InvalidOperationException("Choose a category.");
+                }
 
-                var product = new Product
+                Product product = new Product
                 {
                     Id = productId,
                     Sku = sku.Text,
@@ -206,6 +219,28 @@ namespace EnterprisePOS
             {
                 MessageBox.Show(ex.Message, "Product validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        // Helper to fill the input fields when editing an existing product.
+        private void PopulateExistingProduct(Product existing)
+        {
+            sku.Text = existing.Sku;
+            barcode.Text = existing.Barcode;
+            name.Text = existing.Name;
+            category.SelectedValue = existing.CategoryId;
+            cost.Text = existing.Cost.ToString("0.00", CultureInfo.CurrentCulture);
+            price.Text = existing.Price.ToString("0.00", CultureInfo.CurrentCulture);
+            stock.Text = existing.StockQty.ToString(CultureInfo.InvariantCulture);
+            reorder.Text = existing.ReorderLevel.ToString(CultureInfo.InvariantCulture);
+            if (existing.Image == null)
+            {
+                imageName.Text = "(none)";
+            }
+            else
+            {
+                imageName.Text = "(current image kept)";
+            }
+            active.Checked = existing.IsActive;
         }
     }
 }
