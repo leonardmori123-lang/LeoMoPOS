@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -98,19 +98,19 @@ namespace EnterprisePOS
             top.Controls.Add(add);
 
             // Bottom: cart buttons and Checkout on the left, totals and payment on the right
-            var footer = new Panel { Dock = DockStyle.Bottom, Height = 280, Padding = new Padding(8) };
+            Panel footer = new Panel { Dock = DockStyle.Bottom, Height = 280, Padding = new Padding(8) };
 
-            var left = new Panel { Dock = DockStyle.Left, Width = 260 };
-            var cartButtons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44 };
-            var remove = new Button { Text = "Remove line", AutoSize = true };
-            var clear = new Button { Text = "Clear cart", AutoSize = true };
-            remove.Click += (s, e) => RemoveSelected();
-            clear.Click += (s, e) => ClearCart();
+            Panel left = new Panel { Dock = DockStyle.Left, Width = 260 };
+            FlowLayoutPanel cartButtons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44 };
+            Button remove = new Button { Text = "Remove line", AutoSize = true };
+            Button clear = new Button { Text = "Clear cart", AutoSize = true };
+            remove.Click += RemoveButton_Click;
+            clear.Click += ClearCartButton_Click;
             btnCheckout.Click += (s, e) => Checkout();
             cartButtons.Controls.Add(remove);
             cartButtons.Controls.Add(clear);
 
-            var receiptButtons = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 44, ColumnCount = 2, RowCount = 1 };
+            TableLayoutPanel receiptButtons = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 44, ColumnCount = 2, RowCount = 1 };
             receiptButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             receiptButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             receiptButtons.Controls.Add(btnPreview, 0, 0);
@@ -123,10 +123,13 @@ namespace EnterprisePOS
             left.Controls.Add(btnCheckout);
             left.Controls.Add(cartButtons);
 
-            var amounts = new TableLayoutPanel { Dock = DockStyle.Right, Width = 340, ColumnCount = 2, RowCount = 7 };
+            TableLayoutPanel amounts = new TableLayoutPanel { Dock = DockStyle.Right, Width = 340, ColumnCount = 2, RowCount = 7 };
             amounts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             amounts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            for (int i = 0; i < 7; i++) amounts.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 7f));
+            for (int i = 0; i < 7; i++)
+            {
+                amounts.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 7f));
+            }
             string taxCaption = "Tax (" + SalesService.TaxRatePercent.ToString("0.##", CultureInfo.InvariantCulture) + "%)";
             AddAmountRow(amounts, "Subtotal", lblSubtotal, 0);
             AddAmountRow(amounts, "Discount", txtDiscount, 1);
@@ -144,26 +147,14 @@ namespace EnterprisePOS
             Controls.Add(footer);
             Controls.Add(top);
 
-            grid.CellEndEdit += (s, e) => QuantityEdited(e.RowIndex);
-            grid.DataError += (s, e) =>
-            {
-                e.ThrowException = false;
-                MessageBox.Show("Quantity must be a whole number.", "New Order");
-            };
-            txtDiscount.TextChanged += (s, e) => RefreshTotals();
-            txtTendered.TextChanged += (s, e) => RefreshTotals();
-            cboPayment.SelectedIndexChanged += (s, e) => PaymentChanged();
+            grid.CellEndEdit += Grid_CellEndEdit;
+            grid.DataError += Grid_DataError;
+            txtDiscount.TextChanged += TxtDiscount_TextChanged;
+            txtTendered.TextChanged += TxtTendered_TextChanged;
+            cboPayment.SelectedIndexChanged += CboPayment_SelectedIndexChanged;
 
             // Do not throw away a cart by accident
-            FormClosing += (s, e) =>
-            {
-                if (cart.Count > 0 &&
-                    MessageBox.Show("The cart still has items. Close and discard it?", "New Order",
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                {
-                    e.Cancel = true;
-                }
-            };
+            FormClosing += CheckoutForm_FormClosing;
 
             ActiveControl = txtCode;
             PaymentChanged();
@@ -171,7 +162,7 @@ namespace EnterprisePOS
 
         private void BuildColumns()
         {
-            var money = new DataGridViewCellStyle { Format = "N2", Alignment = DataGridViewContentAlignment.MiddleRight };
+            DataGridViewCellStyle money = new DataGridViewCellStyle { Format = "N2", Alignment = DataGridViewContentAlignment.MiddleRight };
 
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "SKU", DataPropertyName = "Sku", ReadOnly = true, FillWeight = 20 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Product", DataPropertyName = "ProductName", ReadOnly = true, FillWeight = 45 });
@@ -215,14 +206,39 @@ namespace EnterprisePOS
                 }
 
                 int qty = (int)numQty.Value;
-                var existing = cart.FirstOrDefault(l => l.ProductId == product.Id);
-                int inCart = existing == null ? 0 : existing.Quantity;
+                CartLine existing = null;
+                foreach (CartLine line in cart)
+                {
+                    if (line.ProductId == product.Id)
+                    {
+                        existing = line;
+                        break;
+                    }
+                }
+
+                int inCart;
+                if (existing == null)
+                {
+                    inCart = 0;
+                }
+                else
+                {
+                    inCart = existing.Quantity;
+                }
 
                 if (inCart + qty > product.StockQty)
                 {
+                    string alreadyText;
+                    if (inCart > 0)
+                    {
+                        alreadyText = " (" + inCart + " already in the cart).";
+                    }
+                    else
+                    {
+                        alreadyText = ".";
+                    }
                     MessageBox.Show(
-                        "Only " + product.StockQty + " of \"" + product.Name + "\" in stock" +
-                        (inCart > 0 ? " (" + inCart + " already in the cart)." : "."),
+                        "Only " + product.StockQty + " of \"" + product.Name + "\" in stock" + alreadyText,
                         "New Order");
                     txtCode.SelectAll();
                     return;
@@ -265,11 +281,17 @@ namespace EnterprisePOS
         // After the cashier types a new quantity in the grid
         private void QuantityEdited(int rowIndex)
         {
-            if (rowIndex < 0 || rowIndex >= cart.Count) return;
+            if (rowIndex < 0 || rowIndex >= cart.Count)
+            {
+                return;
+            }
 
-            var line = cart[rowIndex];
+            CartLine line = cart[rowIndex];
             int stock;
-            if (!stockByProduct.TryGetValue(line.ProductId, out stock)) stock = int.MaxValue;
+            if (!stockByProduct.TryGetValue(line.ProductId, out stock))
+            {
+                stock = int.MaxValue;
+            }
 
             if (line.Quantity < 1)
             {
@@ -287,7 +309,10 @@ namespace EnterprisePOS
 
         private void RemoveSelected()
         {
-            if (grid.CurrentRow == null) return;
+            if (grid.CurrentRow == null)
+            {
+                return;
+            }
 
             cart.RemoveAt(grid.CurrentRow.Index);
             RefreshTotals();
@@ -296,10 +321,16 @@ namespace EnterprisePOS
 
         private void ClearCart()
         {
-            if (cart.Count == 0) return;
+            if (cart.Count == 0)
+            {
+                return;
+            }
 
-            var answer = MessageBox.Show("Remove every line from the cart?", "New Order", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (answer != DialogResult.Yes) return;
+            DialogResult answer = MessageBox.Show("Remove every line from the cart?", "New Order", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (answer != DialogResult.Yes)
+            {
+                return;
+            }
 
             cart.Clear();
             RefreshTotals();
@@ -311,7 +342,10 @@ namespace EnterprisePOS
         {
             bool cash = cboPayment.Text == PaymentMethods.Cash;
             txtTendered.Enabled = cash;
-            if (!cash) txtTendered.Clear();
+            if (!cash)
+            {
+                txtTendered.Clear();
+            }
             RefreshTotals();
         }
 
@@ -334,9 +368,20 @@ namespace EnterprisePOS
                 }
             }
 
-            if (!discountOk) totals = sales.Calculate(cart, 0m);
+            if (!discountOk)
+            {
+                totals = sales.Calculate(cart, 0m);
+            }
 
-            txtDiscount.BackColor = discountOk ? SystemColors.Window : Color.MistyRose;
+            if (discountOk)
+            {
+                txtDiscount.BackColor = SystemColors.Window;
+            }
+            else
+            {
+                txtDiscount.BackColor = Color.MistyRose;
+            }
+
             lblSubtotal.Text = totals.Subtotal.ToString("N2");
             lblTax.Text = totals.Tax.ToString("N2");
             lblTotal.Text = totals.Total.ToString("N2");
@@ -365,16 +410,20 @@ namespace EnterprisePOS
 
                 decimal discount;
                 if (!TryParseMoney(txtDiscount.Text, out discount))
+                {
                     throw new InvalidOperationException("The discount must be a number, 0 or more.");
+                }
 
-                var totals = sales.Calculate(cart, discount);
+                OrderTotals totals = sales.Calculate(cart, discount);
 
                 string method = cboPayment.Text;
                 decimal paid = totals.Total;
                 if (method == PaymentMethods.Cash)
                 {
                     if (!TryParseMoney(txtTendered.Text, out paid) || paid < totals.Total)
+                    {
                         throw new InvalidOperationException("Enter the cash received. It must cover the total of " + totals.Total.ToString("N2") + ".");
+                    }
                 }
 
                 int orderId = sales.Checkout(cashier, cart.ToList(), null, method, discount, paid);
@@ -388,7 +437,7 @@ namespace EnterprisePOS
                 string summary;
                 try
                 {
-                    var order = sales.GetOrder(orderId);
+                    Order order = sales.GetOrder(orderId);
                     lastReceipt = sales.BuildReceipt(order, cashier.FullName);
                     btnPreview.Enabled = true;
                     btnPrint.Enabled = true;
@@ -432,8 +481,14 @@ namespace EnterprisePOS
             try
             {
                 IReceiptPrinter printer = new ReceiptPrinter();
-                if (print) printer.Print(lastReceipt);
-                else printer.Preview(lastReceipt);
+                if (print)
+                {
+                    printer.Print(lastReceipt);
+                }
+                else
+                {
+                    printer.Preview(lastReceipt);
+                }
             }
             catch (Exception ex)
             {
@@ -450,6 +505,52 @@ namespace EnterprisePOS
             txtTendered.Clear();
             cboPayment.SelectedIndex = 0;
             RefreshTotals();
+        }
+
+        private void RemoveButton_Click(object sender, EventArgs e)
+        {
+            RemoveSelected();
+        }
+
+        private void ClearCartButton_Click(object sender, EventArgs e)
+        {
+            ClearCart();
+        }
+
+        private void Grid_CellEndEdit(object sender, DataGridViewCellEventArgs e)
+        {
+            QuantityEdited(e.RowIndex);
+        }
+
+        private void Grid_DataError(object sender, DataGridViewDataErrorEventArgs e)
+        {
+            e.ThrowException = false;
+            MessageBox.Show("Quantity must be a whole number.", "New Order");
+        }
+
+        private void TxtDiscount_TextChanged(object sender, EventArgs e)
+        {
+            RefreshTotals();
+        }
+
+        private void TxtTendered_TextChanged(object sender, EventArgs e)
+        {
+            RefreshTotals();
+        }
+
+        private void CboPayment_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            PaymentChanged();
+        }
+
+        private void CheckoutForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (cart.Count > 0 &&
+                MessageBox.Show("The cart still has items. Close and discard it?", "New Order",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                e.Cancel = true;
+            }
         }
     }
 }
