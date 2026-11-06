@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -52,16 +53,16 @@ namespace EnterprisePOS
             var commands = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(8) };
             var search = new Button { Text = "Search", AutoSize = true };
             var add = new Button { Text = "Add Product", AutoSize = true, Margin = new Padding(30, 3, 3, 3) };
-            var edit = new Button { Text = "Edit", AutoSize = true };
-            var adjust = new Button { Text = "Adjust Stock", AutoSize = true };
-            var deactivate = new Button { Text = "Deactivate", AutoSize = true };
+            Button edit = new Button { Text = "Edit", AutoSize = true };
+            Button adjust = new Button { Text = "Adjust Stock", AutoSize = true };
+            Button deactivate = new Button { Text = "Deactivate", AutoSize = true };
 
             search.Click += (s, e) => LoadRows();
-            add.Click += (s, e) => AddProduct();
-            edit.Click += (s, e) => EditSelected();
-            adjust.Click += (s, e) => AdjustSelected();
-            deactivate.Click += (s, e) => DeactivateSelected();
-            chkInactive.CheckedChanged += (s, e) => LoadRows();
+            add.Click += AddButton_Click;
+            edit.Click += EditButton_Click;
+            adjust.Click += AdjustButton_Click;
+            deactivate.Click += DeactivateButton_Click;
+            chkInactive.CheckedChanged += ChkInactive_CheckedChanged;
             txtSearch.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
@@ -70,10 +71,7 @@ namespace EnterprisePOS
                     LoadRows();
                 }
             };
-            grid.CellDoubleClick += (s, e) =>
-            {
-                if (e.RowIndex >= 0) EditSelected();
-            };
+            grid.CellDoubleClick += Grid_CellDoubleClick;
 
             commands.Controls.Add(new Label { Text = "SKU / name / barcode", AutoSize = true, Margin = new Padding(0, 8, 6, 0) });
             commands.Controls.Add(txtSearch);
@@ -84,7 +82,7 @@ namespace EnterprisePOS
             commands.Controls.Add(adjust);
             commands.Controls.Add(deactivate);
 
-            grid.DataBindingComplete += (s, e) => StyleGrid();
+            grid.DataBindingComplete += Grid_DataBindingComplete;
 
             // Fill control first, then the bottom bar, then the top bar.
             Controls.Add(grid);
@@ -98,7 +96,7 @@ namespace EnterprisePOS
         {
             try
             {
-                var products = new InventoryService().Search(txtSearch.Text, chkInactive.Checked);
+                List<Product> products = new InventoryService().Search(txtSearch.Text, chkInactive.Checked);
 
                 grid.DataSource = products.Select(p => new
                 {
@@ -113,7 +111,15 @@ namespace EnterprisePOS
                     p.IsActive
                 }).ToList();
 
-                int low = products.Count(p => p.IsLowStock);
+                int low = 0;
+                foreach (Product p in products)
+                {
+                    if (p.IsLowStock)
+                    {
+                        low++;
+                    }
+                }
+
                 lblSummary.Text = products.Count + " products, " + low + " low on stock (shaded red)";
             }
             catch (Exception ex)
@@ -122,11 +128,52 @@ namespace EnterprisePOS
             }
         }
 
+        private void AddButton_Click(object sender, EventArgs e)
+        {
+            AddProduct();
+        }
+
+        private void EditButton_Click(object sender, EventArgs e)
+        {
+            EditSelected();
+        }
+
+        private void AdjustButton_Click(object sender, EventArgs e)
+        {
+            AdjustSelected();
+        }
+
+        private void DeactivateButton_Click(object sender, EventArgs e)
+        {
+            DeactivateSelected();
+        }
+
+        private void ChkInactive_CheckedChanged(object sender, EventArgs e)
+        {
+            LoadRows();
+        }
+
+        private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0)
+            {
+                EditSelected();
+            }
+        }
+
+        private void Grid_DataBindingComplete(object sender, DataGridViewBindingCompleteEventArgs e)
+        {
+            StyleGrid();
+        }
+
         private void AddProduct()
         {
             using (var editor = new ProductEditorForm(currentUser))
             {
-                if (editor.ShowDialog(this) == DialogResult.OK) LoadRows();
+                if (editor.ShowDialog(this) == DialogResult.OK)
+                {
+                    LoadRows();
+                }
             }
         }
 
@@ -139,9 +186,12 @@ namespace EnterprisePOS
             }
 
             int id = Convert.ToInt32(grid.CurrentRow.Cells["Id"].Value);
-            using (var editor = new ProductEditorForm(currentUser, id))
+            using (ProductEditorForm editor = new ProductEditorForm(currentUser, id))
             {
-                if (editor.ShowDialog(this) == DialogResult.OK) LoadRows();
+                if (editor.ShowDialog(this) == DialogResult.OK)
+                {
+                    LoadRows();
+                }
             }
         }
 
@@ -157,9 +207,12 @@ namespace EnterprisePOS
             string productName = Convert.ToString(grid.CurrentRow.Cells["Name"].Value);
             int stock = Convert.ToInt32(grid.CurrentRow.Cells["StockQty"].Value);
 
-            using (var form = new StockAdjustForm(currentUser, id, productName, stock))
+            using (StockAdjustForm form = new StockAdjustForm(currentUser, id, productName, stock))
             {
-                if (form.ShowDialog(this) == DialogResult.OK) LoadRows();
+                if (form.ShowDialog(this) == DialogResult.OK)
+                {
+                    LoadRows();
+                }
             }
         }
 
@@ -181,10 +234,13 @@ namespace EnterprisePOS
                 return;
             }
 
-            var answer = MessageBox.Show(
+            DialogResult answer = MessageBox.Show(
                 "Deactivate \"" + productName + "\"?\n\nIt will no longer appear at checkout. Past sales stay in the reports. You can turn it back on later with Edit.",
                 "Deactivate product", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (answer != DialogResult.Yes) return;
+            if (answer != DialogResult.Yes)
+            {
+                return;
+            }
 
             try
             {
@@ -200,7 +256,10 @@ namespace EnterprisePOS
         // Number format, narrow Id column, red shading for low stock, grey text for inactive products
         private void StyleGrid()
         {
-            if (!grid.Columns.Contains("Price")) return;
+            if (!grid.Columns.Contains("Price"))
+            {
+                return;
+            }
 
             grid.Columns["Price"].DefaultCellStyle.Format = "N2";
             grid.Columns["Price"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
@@ -212,8 +271,23 @@ namespace EnterprisePOS
                 int reorder = Convert.ToInt32(row.Cells["ReorderLevel"].Value);
                 bool active = (bool)row.Cells["IsActive"].Value;
 
-                row.DefaultCellStyle.BackColor = stock <= reorder ? Color.MistyRose : Color.White;
-                row.DefaultCellStyle.ForeColor = active ? Color.Black : Color.Gray;
+                if (stock <= reorder)
+                {
+                    row.DefaultCellStyle.BackColor = Color.MistyRose;
+                }
+                else
+                {
+                    row.DefaultCellStyle.BackColor = Color.White;
+                }
+
+                if (active)
+                {
+                    row.DefaultCellStyle.ForeColor = Color.Black;
+                }
+                else
+                {
+                    row.DefaultCellStyle.ForeColor = Color.Gray;
+                }
             }
         }
     }
