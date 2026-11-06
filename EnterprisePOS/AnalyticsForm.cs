@@ -1,6 +1,6 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 using EnterprisePOS.Domain;
 using EnterprisePOS.Services;
@@ -50,7 +50,7 @@ namespace EnterprisePOS
 
             BuildColumns();
 
-            var tabs = new TabControl { Dock = DockStyle.Fill };
+            TabControl tabs = new TabControl { Dock = DockStyle.Fill };
             tabs.TabPages.Add(MakePage("Daily sales", gridDaily));
             tabs.TabPages.Add(MakePage("Top products", gridTop));
             tabs.TabPages.Add(MakePage("Sales by category", gridCategory));
@@ -84,22 +84,25 @@ namespace EnterprisePOS
 
         private static TabPage MakePage(string title, DataGridView grid)
         {
-            var page = new TabPage(title);
+            TabPage page = new TabPage(title);
             page.Controls.Add(grid);
             return page;
         }
 
-        // format and alignment: money and counts line up on the right
+        // Format and alignment: money and counts line up on the right.
         private static void AddColumn(DataGridView grid, string header, string property, float weight, string format = null, bool right = false)
         {
-            var column = new DataGridViewTextBoxColumn
+            DataGridViewTextBoxColumn column = new DataGridViewTextBoxColumn
             {
                 HeaderText = header,
                 DataPropertyName = property,
                 FillWeight = weight,
                 ReadOnly = true
             };
-            if (format != null) column.DefaultCellStyle.Format = format;
+            if (format != null)
+            {
+                column.DefaultCellStyle.Format = format;
+            }
             if (right)
             {
                 column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
@@ -131,18 +134,31 @@ namespace EnterprisePOS
         {
             try
             {
-                var start = dtFrom.Value.Date;
-                var end = dtTo.Value.Date;
+                DateTime start = dtFrom.Value.Date;
+                DateTime end = dtTo.Value.Date;
 
-                var daily = reports.GetDailySales(user, start, end);
+                List<DailySales> daily = reports.GetDailySales(user, start, end);
                 gridDaily.DataSource = daily;
                 gridTop.DataSource = reports.GetTopProducts(user, start, end, 10);
                 gridCategory.DataSource = reports.GetSalesByCategory(user, start, end);
                 gridLow.DataSource = reports.GetLowStock(user);
 
-                lblSummary.Text = daily.Count == 0
-                    ? "No completed orders in this period."
-                    : "Orders: " + daily.Sum(d => d.OrderCount) + "      Revenue: " + daily.Sum(d => d.Revenue).ToString("N2");
+                if (daily.Count == 0)
+                {
+                    lblSummary.Text = "No completed orders in this period.";
+                }
+                else
+                {
+                    int totalOrders = 0;
+                    decimal totalRevenue = 0m;
+                    foreach (DailySales row in daily)
+                    {
+                        totalOrders += row.OrderCount;
+                        totalRevenue += row.Revenue;
+                    }
+
+                    lblSummary.Text = "Orders: " + totalOrders + "      Revenue: " + totalRevenue.ToString("N2");
+                }
             }
             catch (Exception ex)
             {
