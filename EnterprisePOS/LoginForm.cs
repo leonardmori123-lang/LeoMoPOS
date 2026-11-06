@@ -1,5 +1,4 @@
-﻿using System;
-using System.Diagnostics;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using EnterprisePOS.Services;
@@ -96,7 +95,10 @@ namespace EnterprisePOS
                 lblStatus.Text = "Unable to connect. Contact the administrator.";
 
                 // An error after Hide() must not leave the program running with no window.
-                if (!Visible) Show();
+                if (!Visible)
+                {
+                    Show();
+                }
             }
         }
     }
