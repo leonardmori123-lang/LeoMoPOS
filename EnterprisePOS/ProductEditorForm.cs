@@ -8,10 +8,9 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Add or edit one product. productId 0 means a new product.
     public sealed class ProductEditorForm : Form
     {
-        private const int MaxImageBytes = 1024 * 1024; // 1 MB
+        private const int MaxImageBytes = 1024 * 1024;
 
         private readonly User currentUser;
         private readonly int productId;
@@ -56,7 +55,6 @@ namespace EnterprisePOS
             AddRow(table, "Cost price", cost, 4);
             AddRow(table, "Selling price", price, 5);
 
-            // Stock is only typed in for a new product. Later changes go through an inventory adjustment.
             stock.ReadOnly = productId != 0;
             string stockLabel;
             if (productId == 0)
@@ -101,7 +99,6 @@ namespace EnterprisePOS
             table.Controls.Add(control, 1, row);
         }
 
-        // Data is loaded here, not in the constructor.
         private void EditorLoad(object sender, EventArgs e)
         {
             try
@@ -156,7 +153,6 @@ namespace EnterprisePOS
                     using (MemoryStream stream = new MemoryStream(bytes))
                     using (Image.FromStream(stream))
                     {
-                        // Opening it proves the file really is a picture.
                     }
 
                     newImage = bytes;
@@ -230,7 +226,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Helper to fill the input fields when editing an existing product.
         private void PopulateExistingProduct(Product existing)
         {
             sku.Text = existing.Sku;

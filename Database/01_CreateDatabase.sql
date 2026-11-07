@@ -1,5 +1,3 @@
-/* PosDB - teacher's script (SQL.pdf), PDF line wraps rejoined.
-   Only change: the comment in usp_Product_Delete is kept on one line. */
 USE master;
 GO
 IF DB_ID(N'PosDB') IS NULL CREATE DATABASE PosDB;
@@ -108,7 +106,6 @@ CREATE TABLE dbo.InventoryLog
  CreatedAt DATETIME NOT NULL CONSTRAINT DF_InventoryLog_Created DEFAULT (GETDATE())
 );
 GO
-/* ---------- Indexes ---------- */
 CREATE UNIQUE INDEX UX_Products_Barcode ON dbo.Products(Barcode) WHERE Barcode IS NOT NULL;
 CREATE INDEX IX_Products_Name ON dbo.Products(Name);
 CREATE INDEX IX_Products_CategoryId ON dbo.Products(CategoryId);
@@ -125,7 +122,6 @@ GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
-/* ===================== AUTH ===================== */
 CREATE OR ALTER PROCEDURE dbo.usp_Login @Username NVARCHAR(50)
 AS
 BEGIN
@@ -142,7 +138,6 @@ BEGIN
  UPDATE dbo.Users SET LastLoginAt = GETDATE() WHERE UserId = @UserId;
 END
 GO
-/* ===================== PRODUCTS ===================== */
 CREATE OR ALTER PROCEDURE dbo.usp_Product_Insert
  @Sku NVARCHAR(30), @Barcode NVARCHAR(50) = NULL, @Name NVARCHAR(150), @CategoryId INT,
  @Price DECIMAL(18,2), @Cost DECIMAL(18,2), @StockQty INT, @ReorderLevel INT,
@@ -182,7 +177,7 @@ BEGIN
  IF @@ROWCOUNT = 0 THROW 50001, N'Product not found.', 1;
 END
 GO
-CREATE OR ALTER PROCEDURE dbo.usp_Product_Delete @ProductId INT -- soft delete keeps sales history intact
+CREATE OR ALTER PROCEDURE dbo.usp_Product_Delete @ProductId INT
 AS
 BEGIN
  SET NOCOUNT ON;
@@ -190,7 +185,6 @@ BEGIN
  IF @@ROWCOUNT = 0 THROW 50001, N'Product not found.', 1;
 END
 GO
-/* ===================== INVENTORY ===================== */
 CREATE OR ALTER PROCEDURE dbo.usp_Inventory_Adjust
  @ProductId INT, @ChangeQty INT, @Reason NVARCHAR(200), @UserId INT
 AS
@@ -213,11 +207,10 @@ BEGIN
  END CATCH
 END
 GO
-/* ===================== ORDERS (transactional) ===================== */
 CREATE OR ALTER PROCEDURE dbo.usp_Order_Create
  @UserId INT, @CustomerId INT = NULL, @PaymentMethod NVARCHAR(20),
  @DiscountAmount DECIMAL(18,2) = 0, @TaxRate DECIMAL(5,2) = 0, @AmountPaid DECIMAL(18,2),
- @ItemsXml XML -- <Items><Item ProductId="1" Quantity="2"/></Items>
+ @ItemsXml XML
 AS
 BEGIN
  SET NOCOUNT ON; SET XACT_ABORT ON;
@@ -231,7 +224,6 @@ BEGIN
  GROUP BY ProductId;
  IF NOT EXISTS (SELECT 1 FROM @Items) THROW 50020, N'The order has no items.', 1;
  IF EXISTS (SELECT 1 FROM @Items WHERE Quantity <= 0) THROW 50021, N'Invalid item quantity.', 1;
- -- lock rows & validate availability (prices are always taken from the database)
  IF EXISTS (SELECT 1 FROM @Items i
  LEFT JOIN dbo.Products p WITH (UPDLOCK, ROWLOCK) ON p.ProductId = i.ProductId
  WHERE p.ProductId IS NULL OR p.IsActive = 0)
@@ -269,7 +261,6 @@ BEGIN
  END CATCH
 END
 GO
-/* ===================== REPORTS ===================== */
 CREATE OR ALTER PROCEDURE dbo.usp_Report_DailySales @From DATETIME, @To DATETIME
 AS
 BEGIN
@@ -332,13 +323,10 @@ USE PosDB;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO
-/* Roles */
 INSERT dbo.Roles (RoleName, Description) VALUES
  (N'Admin', N'Full access including user management'),
  (N'Manager', N'POS, products, inventory and analytics'),
  (N'Cashier', N'Point of sale only');
-/* Users (hash = SHA-256 of Salt + Password, uppercase hex)
- admin / Admin@123 manager / Manager@123 cashier / Cashier@123 */
 DECLARE @s1 VARCHAR(32) = 'A1B2C3D4E5F60718293A4B5C6D7E8F90';
 DECLARE @s2 VARCHAR(32) = '0F1E2D3C4B5A69788796A5B4C3D2E1F0';
 DECLARE @s3 VARCHAR(32) = '1122334455667788AABBCCDDEEFF0011';
@@ -346,11 +334,9 @@ INSERT dbo.Users (Username, PasswordHash, Salt, FullName, RoleId) VALUES
  (N'admin', CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', @s1 + 'Admin@123'), 2), @s1, N'System Administrator', (SELECT RoleId FROM dbo.Roles WHERE RoleName = N'Admin')),
  (N'manager', CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', @s2 + 'Manager@123'), 2), @s2, N'Store Manager', (SELECT RoleId FROM dbo.Roles WHERE RoleName = N'Manager')),
  (N'cashier', CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', @s3 + 'Cashier@123'), 2), @s3, N'Front Desk Cashier', (SELECT RoleId FROM dbo.Roles WHERE RoleName = N'Cashier'));
-/* Categories */
 INSERT dbo.Categories (Name, Description) VALUES
  (N'Beverages', N'Drinks'), (N'Snacks', N'Chips, biscuits and sweets'), (N'Groceries', N'Pantry staples'),
  (N'Household', N'Cleaning and home'), (N'Personal Care', N'Hygiene and beauty');
-/* Products */
 INSERT dbo.Products (Sku, Barcode, Name, CategoryId, Price, Cost, StockQty, ReorderLevel) VALUES
  (N'BEV-001', N'8901000000011', N'Mineral Water 500ml', (SELECT CategoryId FROM dbo.Categories WHERE Name=N'Beverages'), 1.00, 0.45, 200, 40),
  (N'BEV-002', N'8901000000028', N'Cola 330ml Can', (SELECT CategoryId FROM dbo.Categories WHERE Name=N'Beverages'), 1.50, 0.80, 150, 30),
@@ -367,7 +353,6 @@ INSERT dbo.Products (Sku, Barcode, Name, CategoryId, Price, Cost, StockQty, Reor
  (N'PER-002', N'8905000000020', N'Toothpaste 120g', (SELECT CategoryId FROM dbo.Categories WHERE Name=N'Personal Care'), 3.40, 1.70, 55, 12);
 INSERT dbo.InventoryLog (ProductId, ChangeQty, Reason, UserId)
 SELECT ProductId, StockQty, N'Initial stock', (SELECT UserId FROM dbo.Users WHERE Username = N'admin') FROM dbo.Products;
-/* Customers */
 INSERT dbo.Customers (FullName, Phone, Email, Address) VALUES
  (N'Alice Tan', N'+65 8111 2233', N'alice@example.com', N'12 Orchard Road'),
  (N'Brian Lim', N'+65 8222 3344', N'brian@example.com', N'45 Bukit Timah Road'),

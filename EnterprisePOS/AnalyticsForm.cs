@@ -7,7 +7,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Sales reports from the teacher's report procedures, one tab per report.
     public sealed class AnalyticsForm : Form
     {
         private readonly User user;
@@ -56,12 +55,10 @@ namespace EnterprisePOS
             tabs.TabPages.Add(MakePage("Sales by category", gridCategory));
             tabs.TabPages.Add(MakePage("Low stock (now)", gridLow));
 
-            // Fill control first, then the bottom bar, then the top bar.
             Controls.Add(tabs);
             Controls.Add(lblSummary);
             Controls.Add(top);
 
-            // Database calls wait for the Load event, not the constructor.
             Load += (s, e) => LoadReports();
         }
 
@@ -89,7 +86,6 @@ namespace EnterprisePOS
             return page;
         }
 
-        // Format and alignment: money and counts line up on the right.
         private static void AddColumn(DataGridView grid, string header, string property, float weight, string format = null, bool right = false)
         {
             DataGridViewTextBoxColumn column = new DataGridViewTextBoxColumn

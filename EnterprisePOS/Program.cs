@@ -15,8 +15,6 @@ namespace EnterprisePOS
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // Any error nobody caught ends up here, not in Windows' own crash dialog.
-            // This has to be set before the first window is created.
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += Application_ThreadException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
@@ -41,13 +39,10 @@ namespace EnterprisePOS
         }
     }
 
-    // Writes errors to a text file for support, and shows the user a short message that
-    // never contains SQL text, server names or connection strings.
     public static class AppLog
     {
         private const int KeepDays = 30;
 
-        // %LocalAppData%\EnterprisePOS\Logs. Every Windows user can write there, and other users cannot read it.
         public static string Folder
         {
             get
@@ -58,8 +53,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Adds an entry to today's log file (one file per day) and returns a short reference
-        // the user can quote. The full exception, with its stack trace, goes into the file.
         public static string Error(string what, Exception ex)
         {
             string reference = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
@@ -86,13 +79,11 @@ namespace EnterprisePOS
             }
             catch
             {
-                // Writing the log must never cause a second error.
             }
 
             return reference;
         }
 
-        // The safe message for an error nobody planned for
         public static void ReportUnexpected(Exception ex, bool closing)
         {
             try
@@ -126,11 +117,9 @@ namespace EnterprisePOS
             }
             catch
             {
-                // Nothing more can be done here.
             }
         }
 
-        // Rotation: log files older than 30 days are removed when the program starts.
         public static void DeleteOldLogs()
         {
             try
@@ -150,7 +139,6 @@ namespace EnterprisePOS
             }
             catch
             {
-                // Old logs staying a little longer is harmless.
             }
         }
     }

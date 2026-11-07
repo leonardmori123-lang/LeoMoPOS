@@ -4,8 +4,6 @@ using System.Data.SqlClient;
 
 namespace EnterprisePOS.Data
 {
-    // Reads the "EnterprisePOS" connection string from App.config
-    // and hands out open connections. Every repository uses this.
     public static class Db
     {
         public static string ConnectionString
@@ -31,7 +29,6 @@ namespace EnterprisePOS.Data
             {
                 connection.Dispose();
 
-                // The screen gets a plain message. The original error stays attached for the log.
                 throw new InvalidOperationException(
                     "Cannot reach the database. Check that SQL Server is running and the connection settings are correct, then try again.", ex);
             }

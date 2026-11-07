@@ -5,12 +5,10 @@ using EnterprisePOS.Domain;
 
 namespace EnterprisePOS.Services
 {
-    // Sits between the login screen and the database code.
     public sealed class AuthService
     {
         private readonly UserRepository users = new UserRepository();
 
-        // Returns the signed-in user, or null when the username or password is wrong or the account is inactive.
         public User Login(string username, string password)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return null;
@@ -18,7 +16,6 @@ namespace EnterprisePOS.Services
         }
     }
 
-    // User administration. Only an admin can use it.
     public sealed class UserService
     {
         private readonly UserRepository users = new UserRepository();
@@ -29,7 +26,6 @@ namespace EnterprisePOS.Services
             return users.List();
         }
 
-        // Adds a user. Returns the new user id.
         public int Create(User actor, User user, string password)
         {
             RequireAdmin(actor);
@@ -49,7 +45,6 @@ namespace EnterprisePOS.Services
             return users.Create(user, password);
         }
 
-        // Sets a new password for a user. The old password is not needed: this is the admin's reset.
         public void ResetPassword(User actor, int userId, string newPassword)
         {
             RequireAdmin(actor);
@@ -57,13 +52,11 @@ namespace EnterprisePOS.Services
             users.ResetPassword(userId, newPassword);
         }
 
-        // Changes the name, role and active flag. The username and password stay as they are.
         public void Update(User actor, User user)
         {
             RequireAdmin(actor);
             ValidateProfile(user);
 
-            // An admin cannot lock themselves out. The database also keeps at least one active admin.
             if (user.Id == actor.Id)
             {
                 if (!user.IsActive) throw new InvalidOperationException("You cannot deactivate your own account.");
@@ -98,7 +91,6 @@ namespace EnterprisePOS.Services
         }
     }
 
-    // Product rules. Anyone can search; only an admin or manager can change products.
     public sealed class InventoryService
     {
         private readonly ProductRepository products = new ProductRepository();
@@ -109,8 +101,6 @@ namespace EnterprisePOS.Services
             return products.Search(text, includeInactive);
         }
 
-        // Finds one active product whose SKU or barcode matches the text exactly (not case-sensitive).
-        // This is what a barcode scanner or a typed SKU at the counter needs. Returns null when nothing matches.
         public Product FindByCode(string code)
         {
             code = (code ?? string.Empty).Trim();
@@ -137,8 +127,6 @@ namespace EnterprisePOS.Services
             return categories.List();
         }
 
-        // Adds the product when Id is 0, otherwise updates it. Returns the product id.
-        // changeImage tells an update whether to replace the stored picture.
         public int Save(Product product, User actor, bool changeImage)
         {
             RequireManager(actor);
@@ -156,7 +144,6 @@ namespace EnterprisePOS.Services
             products.Deactivate(productId);
         }
 
-        // Adds (positive) or removes (negative) stock. A reason is required. Returns the new stock level.
         public int AdjustStock(int productId, int change, string reason, User actor)
         {
             RequireManager(actor);
@@ -170,7 +157,6 @@ namespace EnterprisePOS.Services
             return products.AdjustStock(productId, change, reason, actor.Id);
         }
 
-        // Hiding a menu is not security, so the service checks the role as well.
         private static void RequireManager(User actor)
         {
             if (actor == null || (actor.Role != UserRole.Admin && actor.Role != UserRole.Manager))
@@ -183,7 +169,6 @@ namespace EnterprisePOS.Services
 
             p.Sku = (p.Sku ?? string.Empty).Trim();
             p.Name = (p.Name ?? string.Empty).Trim();
-            // An empty barcode must be saved as NULL: the unique barcode index would reject a second empty string.
             p.Barcode = string.IsNullOrWhiteSpace(p.Barcode) ? null : p.Barcode.Trim();
 
             if (p.Sku.Length == 0) throw new ArgumentException("SKU is required.");
@@ -199,15 +184,12 @@ namespace EnterprisePOS.Services
         }
     }
 
-    // Lets the checkout screen print without knowing which printer API is behind it.
-    // The WinForms project provides the real one (ReceiptPrinter.cs).
     public interface IReceiptPrinter
     {
         void Print(ReceiptData receipt);
         void Preview(ReceiptData receipt);
     }
 
-    // The amounts shown for a cart
     public sealed class OrderTotals
     {
         public decimal Subtotal { get; set; }
@@ -216,18 +198,12 @@ namespace EnterprisePOS.Services
         public decimal Total { get; set; }
     }
 
-    // Sales rules. The totals here follow the same formula as the teacher's usp_Order_Create,
-    // so the preview on screen matches what the database saves.
     public sealed class SalesService
     {
-        // A percent, the way usp_Order_Create expects it: 12 means 12%.
         public const decimal TaxRatePercent = 12m;
 
         private readonly OrderRepository orders = new OrderRepository();
 
-        // subtotal = sum of quantity x unit price
-        // tax      = (subtotal - discount) x rate, rounded to 2 decimals (halves round up, as SQL Server does)
-        // total    = subtotal - discount + tax
         public OrderTotals Calculate(IEnumerable<CartLine> lines, decimal discount)
         {
             decimal subtotal = 0m;
@@ -249,8 +225,6 @@ namespace EnterprisePOS.Services
             };
         }
 
-        // Saves the order and returns its id. The database re-checks prices, stock, discount and payment,
-        // so these checks only give the cashier a clear message earlier.
         public int Checkout(User cashier, IList<CartLine> lines, int? customerId, string paymentMethod, decimal discount, decimal amountPaid)
         {
             if (cashier == null) throw new UnauthorizedAccessException("Sign in before taking an order.");
@@ -271,19 +245,15 @@ namespace EnterprisePOS.Services
             }, TaxRatePercent);
         }
 
-        // A saved order, as the database stored it
         public Order GetOrder(int orderId)
         {
             return orders.GetById(orderId);
         }
 
-        // Change these three lines to your own shop details.
         private const string BusinessName = "Enterprise POS";
         private const string BusinessAddress = "123 Main Street, City";
         private const string BusinessPhone = "+1 555 0100";
 
-        // Builds the receipt from an order that is already saved, so the numbers on paper
-        // are the ones the database stored (order number, tax, change).
         public ReceiptData BuildReceipt(Order order, string cashierName)
         {
             if (order == null) throw new ArgumentNullException("order");
@@ -319,7 +289,6 @@ namespace EnterprisePOS.Services
         }
     }
 
-    // Report rules. Only an admin or manager can open the sales reports.
     public sealed class ReportingService
     {
         private readonly ReportRepository reports = new ReportRepository();

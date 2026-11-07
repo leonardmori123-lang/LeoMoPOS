@@ -10,7 +10,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // New order screen: build the cart, pick the payment, save the order.
     public sealed class CheckoutForm : Form
     {
         private readonly User cashier;
@@ -57,7 +56,6 @@ namespace EnterprisePOS
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
         };
 
-        // Both stay gray until a sale is saved. They always refer to the last completed order.
         private readonly Button btnPreview = new Button { Text = "Preview receipt", Dock = DockStyle.Fill, Enabled = false };
         private readonly Button btnPrint = new Button { Text = "Print receipt", Dock = DockStyle.Fill, Enabled = false };
         private ReceiptData lastReceipt;
@@ -78,13 +76,11 @@ namespace EnterprisePOS
             cboPayment.Items.AddRange(PaymentMethods.All);
             cboPayment.SelectedIndex = 0;
 
-            // Top bar: barcode or SKU, quantity, Add
             var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(8) };
             var add = new Button { Text = "Add", AutoSize = true };
             add.Click += (s, e) => AddLine();
             txtCode.KeyDown += (s, e) =>
             {
-                // A barcode scanner types the code and then presses Enter.
                 if (e.KeyCode == Keys.Enter)
                 {
                     e.SuppressKeyPress = true;
@@ -97,7 +93,6 @@ namespace EnterprisePOS
             top.Controls.Add(numQty);
             top.Controls.Add(add);
 
-            // Bottom: cart buttons and Checkout on the left, totals and payment on the right
             Panel footer = new Panel { Dock = DockStyle.Bottom, Height = 280, Padding = new Padding(8) };
 
             Panel left = new Panel { Dock = DockStyle.Left, Width = 260 };
@@ -118,7 +113,6 @@ namespace EnterprisePOS
             btnPreview.Click += (s, e) => ShowReceipt(false);
             btnPrint.Click += (s, e) => ShowReceipt(true);
 
-            // The last control added docks first: Checkout takes the very bottom, the receipt buttons sit above it.
             left.Controls.Add(receiptButtons);
             left.Controls.Add(btnCheckout);
             left.Controls.Add(cartButtons);
@@ -142,7 +136,6 @@ namespace EnterprisePOS
             footer.Controls.Add(amounts);
             footer.Controls.Add(left);
 
-            // Fill control first, then the bottom bar, then the top bar.
             Controls.Add(grid);
             Controls.Add(footer);
             Controls.Add(top);
@@ -153,7 +146,6 @@ namespace EnterprisePOS
             txtTendered.TextChanged += TxtTendered_TextChanged;
             cboPayment.SelectedIndexChanged += CboPayment_SelectedIndexChanged;
 
-            // Do not throw away a cart by accident
             FormClosing += CheckoutForm_FormClosing;
 
             ActiveControl = txtCode;
@@ -177,7 +169,6 @@ namespace EnterprisePOS
             table.Controls.Add(value, 1, row);
         }
 
-        // Blank counts as 0. Returns false for text that is not a number or is negative.
         private static bool TryParseMoney(string text, out decimal value)
         {
             text = (text ?? string.Empty).Trim();
@@ -189,7 +180,6 @@ namespace EnterprisePOS
             return decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out value) && value >= 0m;
         }
 
-        // Looks the code up, then adds a line, or adds to the quantity when the product is already in the cart.
         private void AddLine()
         {
             var code = txtCode.Text.Trim();
@@ -273,12 +263,10 @@ namespace EnterprisePOS
             }
             finally
             {
-                // Ready for the next scan
                 txtCode.Focus();
             }
         }
 
-        // After the cashier types a new quantity in the grid
         private void QuantityEdited(int rowIndex)
         {
             if (rowIndex < 0 || rowIndex >= cart.Count)
@@ -337,7 +325,6 @@ namespace EnterprisePOS
             txtCode.Focus();
         }
 
-        // Cash needs the amount received typed in. Card and Mobile pay exactly the total.
         private void PaymentChanged()
         {
             bool cash = cboPayment.Text == PaymentMethods.Cash;
@@ -349,7 +336,6 @@ namespace EnterprisePOS
             RefreshTotals();
         }
 
-        // The discount box turns pink when the value cannot be used; the totals then ignore it.
         private void RefreshTotals()
         {
             decimal discount;
@@ -403,7 +389,7 @@ namespace EnterprisePOS
 
         private void Checkout()
         {
-            btnCheckout.Enabled = false; // one click, one order
+            btnCheckout.Enabled = false;
             try
             {
                 if (cart.Count == 0) throw new InvalidOperationException("The cart is empty.");
@@ -428,8 +414,6 @@ namespace EnterprisePOS
 
                 int orderId = sales.Checkout(cashier, cart.ToList(), null, method, discount, paid);
 
-                // From here the order is saved. Reading it back only fills in the confirmation and the receipt,
-                // so a problem there must never look like a failed checkout.
                 lastReceipt = null;
                 btnPreview.Enabled = false;
                 btnPrint.Enabled = false;
@@ -468,8 +452,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Preview or print the receipt of the last completed order. This only reads, it never creates an order,
-        // and a printer problem is reported here without touching the sale that is already saved.
         private void ShowReceipt(bool print)
         {
             if (lastReceipt == null)

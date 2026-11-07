@@ -1,5 +1,4 @@
 using System;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -10,11 +9,8 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Navigation, role-aware menus, and the day's numbers for admins and managers.
     public sealed class MainForm : Form
     {
-        private const string DefaultDash = "-";
-
         private readonly User currentUser;
         private readonly bool canManage;
         private readonly ReportingService reports = new ReportingService();
@@ -31,10 +27,6 @@ namespace EnterprisePOS
             WindowState = FormWindowState.Maximized;
             AutoScaleMode = AutoScaleMode.Font;
 
-            // Roles from the teacher's script:
-            //   Admin   = everything, including user management
-            //   Manager = POS, products, inventory and analytics
-            //   Cashier = point of sale only
             canManage = user.Role == UserRole.Admin || user.Role == UserRole.Manager;
 
             var menu = new MenuStrip();
@@ -59,9 +51,13 @@ namespace EnterprisePOS
                 var admin = new ToolStripMenuItem("Administration");
                 admin.DropDownItems.Add("Users", null, (s, e) => ShowChild(new UserAdminForm(currentUser)));
                 admin.DropDownItems.Add(new ToolStripSeparator());
-                admin.DropDownItems.Add("Check database connection", null, CheckConnectionMenuItem_Click);
-                admin.DropDownItems.Add("Open log folder", null, OpenLogFolderMenuItem_Click);
-                admin.DropDownItems.Add("Simulate error (test)", null, SimulateErrorMenuItem_Click);
+                admin.DropDownItems.Add("Check database connection", null, (s, e) => CheckConnection());
+                admin.DropDownItems.Add("Check built-in database (SQLite)", null, (s, e) => CheckBuiltInDatabase());
+                admin.DropDownItems.Add("Open log folder", null, (s, e) => OpenLogFolder());
+                admin.DropDownItems.Add("Simulate error (test)", null, (s, e) =>
+                {
+                    throw new InvalidOperationException("Test error from the Administration menu.");
+                });
                 menu.Items.Add(admin);
             }
 
@@ -75,7 +71,6 @@ namespace EnterprisePOS
                 ForeColor = Color.DarkSlateBlue
             };
 
-            // Row 1: the day's numbers (admin and manager only)
             var tiles = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -88,7 +83,6 @@ namespace EnterprisePOS
             tiles.Controls.Add(MakeTile("Low stock items", lblLowStock));
             tiles.Controls.Add(MakeTile("Active products", lblProducts));
 
-            // Row 2: shortcuts to the same screens as the menu
             var shortcuts = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -109,43 +103,16 @@ namespace EnterprisePOS
             body.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
             body.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
             body.Controls.Add(title, 0, 0);
-            if (canManage)
-            {
-                body.Controls.Add(tiles, 0, 1);
-            }
+            if (canManage) body.Controls.Add(tiles, 0, 1);
             body.Controls.Add(shortcuts, 0, 2);
 
-            // The Fill control goes in first, the menu last, so the menu docks at the top.
             Controls.Add(body);
             Controls.Add(menu);
             MainMenuStrip = menu;
 
-            // Database calls wait for the Load event, not the constructor.
-            Load += MainForm_Load;
+            Load += (s, e) => RefreshDashboard();
         }
 
-        private void MainForm_Load(object sender, EventArgs e)
-        {
-            RefreshDashboard();
-        }
-
-        private void CheckConnectionMenuItem_Click(object sender, EventArgs e)
-        {
-            CheckConnection();
-        }
-
-        private void OpenLogFolderMenuItem_Click(object sender, EventArgs e)
-        {
-            OpenLogFolder();
-        }
-
-        private void SimulateErrorMenuItem_Click(object sender, EventArgs e)
-        {
-            // Goes through the same path as a real unexpected error: logged, safe message, program keeps running.
-            throw new InvalidOperationException("Test error from the Administration menu.");
-        }
-
-        // Opens a screen as a dialog, then updates the numbers, since a sale or stock change may have happened.
         private void ShowChild(Form form)
         {
             using (form)
@@ -155,12 +122,11 @@ namespace EnterprisePOS
             RefreshDashboard();
         }
 
-        // Admin only: proves the program can reach the database, and says which one it reached.
         private static void CheckConnection()
         {
             try
             {
-                using (SqlConnection connection = Db.Open())
+                using (var connection = Db.Open())
                 {
                     MessageBox.Show(
                         "Connected to database \"" + connection.Database + "\" on " + connection.DataSource + ".",
@@ -170,6 +136,20 @@ namespace EnterprisePOS
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static void CheckBuiltInDatabase()
+        {
+            try
+            {
+                MessageBox.Show(SqliteDb.Describe(), "Built-in database", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                string reference = AppLog.Error("Built-in database check failed", ex);
+                MessageBox.Show(ex.Message + Environment.NewLine + Environment.NewLine + "Reference: " + reference,
+                    "Built-in database", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -188,34 +168,24 @@ namespace EnterprisePOS
 
         private void RefreshDashboard()
         {
-            if (!canManage)
-            {
-                return;
-            }
+            if (!canManage) return;
 
             try
             {
-                DashboardStats stats = reports.GetDashboard(currentUser);
+                var stats = reports.GetDashboard(currentUser);
                 lblSales.Text = stats.TodaySales.ToString("N2");
                 lblOrders.Text = stats.TodayOrders.ToString();
                 lblLowStock.Text = stats.LowStockCount.ToString();
-                if (stats.LowStockCount > 0)
-                {
-                    lblLowStock.ForeColor = Color.Firebrick;
-                }
-                else
-                {
-                    lblLowStock.ForeColor = Color.DarkSlateBlue;
-                }
+                lblLowStock.ForeColor = stats.LowStockCount > 0 ? Color.Firebrick : Color.DarkSlateBlue;
                 lblProducts.Text = stats.ActiveProducts.ToString();
             }
             catch
             {
                 // The numbers are a convenience. If they cannot load, show dashes and let the rest work.
-                lblSales.Text = DefaultDash;
-                lblOrders.Text = DefaultDash;
-                lblLowStock.Text = DefaultDash;
-                lblProducts.Text = DefaultDash;
+                lblSales.Text = "-";
+                lblOrders.Text = "-";
+                lblLowStock.Text = "-";
+                lblProducts.Text = "-";
             }
         }
 
@@ -223,7 +193,7 @@ namespace EnterprisePOS
         {
             return new Label
             {
-                Text = DefaultDash,
+                Text = "-",
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 20, FontStyle.Bold),
                 ForeColor = Color.DarkSlateBlue
@@ -232,7 +202,7 @@ namespace EnterprisePOS
 
         private static Panel MakeTile(string caption, Label value)
         {
-            Panel tile = new Panel
+            var tile = new Panel
             {
                 Width = 210,
                 Height = 90,
@@ -240,7 +210,7 @@ namespace EnterprisePOS
                 BackColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle
             };
-            Label label = new Label
+            var label = new Label
             {
                 Text = caption,
                 Dock = DockStyle.Top,
@@ -250,7 +220,6 @@ namespace EnterprisePOS
             };
             value.Dock = DockStyle.Fill;
 
-            // The last control added docks first, so the caption takes the top and the value fills the rest.
             tile.Controls.Add(value);
             tile.Controls.Add(label);
             return tile;

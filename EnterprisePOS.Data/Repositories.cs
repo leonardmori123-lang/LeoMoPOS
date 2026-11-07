@@ -8,167 +8,6 @@ using EnterprisePOS.Domain;
 
 namespace EnterprisePOS.Data
 {
-    public sealed class UserRepository
-    {
-        // Returns the user when the username exists, the account is active and the password matches.
-        // Returns null in every other case, so the caller cannot tell which part was wrong.
-        public User Login(string username, string password)
-        {
-            User user;
-            string salt;
-            string hash;
-
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Login", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@Username", username ?? string.Empty);
-
-                using (var reader = command.ExecuteReader())
-                {
-                    if (!reader.Read()) return null;
-
-                    salt = (string)reader["Salt"];
-                    hash = (string)reader["PasswordHash"];
-                    user = new User
-                    {
-                        Id = (int)reader["UserId"],
-                        Username = (string)reader["Username"],
-                        FullName = (string)reader["FullName"],
-                        Role = (UserRole)(int)reader["RoleId"],
-                        IsActive = (bool)reader["IsActive"]
-                    };
-                }
-            }
-
-            if (!user.IsActive) return null;
-            if (!PasswordHasher.Verify(password, salt, hash)) return null;
-
-            TouchLogin(user.Id);
-            return user;
-        }
-
-        // Every user, active or not (no password data)
-        public List<User> List()
-        {
-            var list = new List<User>();
-
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_User_List", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        list.Add(new User
-                        {
-                            Id = (int)reader["UserId"],
-                            Username = (string)reader["Username"],
-                            FullName = (string)reader["FullName"],
-                            Role = (UserRole)(int)reader["RoleId"],
-                            IsActive = (bool)reader["IsActive"],
-                            LastLoginAt = reader["LastLoginAt"] as DateTime?
-                        });
-                    }
-                }
-            }
-            return list;
-        }
-
-        // Adds a user. The password is salted and hashed here; only the hash and the salt are stored.
-        public int Create(User user, string password)
-        {
-            string salt = PasswordHasher.NewSalt();
-            string hash = PasswordHasher.Hash(salt, password);
-
-            try
-            {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_Create", connection))
-                {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@Username", user.Username);
-                    command.Parameters.AddWithValue("@PasswordHash", hash);
-                    command.Parameters.AddWithValue("@Salt", salt);
-                    command.Parameters.AddWithValue("@FullName", user.FullName);
-                    command.Parameters.AddWithValue("@RoleId", (int)user.Role);
-                    return Convert.ToInt32(command.ExecuteScalar());
-                }
-            }
-            catch (SqlException ex)
-            {
-                throw Friendly(ex);
-            }
-        }
-
-        // Changes the name, role and active flag of an existing user
-        public void Update(User user)
-        {
-            try
-            {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_Update", connection))
-                {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@UserId", user.Id);
-                    command.Parameters.AddWithValue("@FullName", user.FullName);
-                    command.Parameters.AddWithValue("@RoleId", (int)user.Role);
-                    command.Parameters.AddWithValue("@IsActive", user.IsActive);
-                    command.ExecuteNonQuery();
-                }
-            }
-            catch (SqlException ex)
-            {
-                throw Friendly(ex);
-            }
-        }
-
-        // Sets a new password. A fresh salt is made every time, then only the hash and the salt are stored.
-        public void ResetPassword(int userId, string newPassword)
-        {
-            string salt = PasswordHasher.NewSalt();
-            string hash = PasswordHasher.Hash(salt, newPassword);
-
-            try
-            {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_ResetPassword", connection))
-                {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@UserId", userId);
-                    command.Parameters.AddWithValue("@PasswordHash", hash);
-                    command.Parameters.AddWithValue("@Salt", salt);
-                    command.ExecuteNonQuery();
-                }
-            }
-            catch (SqlException ex)
-            {
-                throw Friendly(ex);
-            }
-        }
-
-        // 2627 / 2601 = the UNIQUE constraint on Username. 50000 and up are the messages written in the SQL script.
-        private static Exception Friendly(SqlException ex)
-        {
-            if (ex.Number == 2627 || ex.Number == 2601) return new InvalidOperationException("That username is already taken.");
-            if (ex.Number >= 50000) return new InvalidOperationException(ex.Message);
-            return ex;
-        }
-
-        private static void TouchLogin(int userId)
-        {
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_User_TouchLogin", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@UserId", userId);
-                command.ExecuteNonQuery();
-            }
-        }
-    }
-
     public sealed class CategoryRepository
     {
         public List<Category> List()
@@ -200,12 +39,8 @@ namespace EnterprisePOS.Data
 
     public sealed class OrderRepository
     {
-        // Saves a whole order. The stored procedure does everything in one transaction:
-        // it takes prices from the Products table, checks stock, writes the order and its lines,
-        // lowers the stock and logs each movement. If anything fails, nothing is saved.
         public int Create(Order order, decimal taxRatePercent)
         {
-            // <Items><Item ProductId="1" Quantity="2"/></Items>  (only whole numbers go in, so no escaping is needed)
             var xml = new StringBuilder("<Items>");
             foreach (var line in order.Lines)
             {
@@ -235,13 +70,11 @@ namespace EnterprisePOS.Data
             }
             catch (SqlException ex)
             {
-                // The messages raised by the teacher's procedure (for example "Insufficient stock for ...") read well as they are.
                 if (ex.Number >= 50000) throw new InvalidOperationException(ex.Message);
                 throw;
             }
         }
 
-        // One saved order with its lines. Returns null when the id does not exist.
         public Order GetById(int orderId)
         {
             using (var connection = Db.Open())
@@ -297,8 +130,6 @@ namespace EnterprisePOS.Data
         }
     }
 
-    // Reads the teacher's report procedures. Each one adds a day to the end date itself,
-    // so the end date passed in is the last day to include.
     public sealed class ReportRepository
     {
         public List<DailySales> GetDailySales(DateTime start, DateTime end)
@@ -363,7 +194,6 @@ namespace EnterprisePOS.Data
             return list;
         }
 
-        // Active products at or below their reorder level, right now (no date range)
         public List<LowStockItem> GetLowStock()
         {
             var list = new List<LowStockItem>();
@@ -389,7 +219,6 @@ namespace EnterprisePOS.Data
             return list;
         }
 
-        // The four numbers on the main screen (today's sales, today's orders, low stock count, active products)
         public DashboardStats GetDashboard()
         {
             using (var connection = Db.Open())
@@ -422,8 +251,6 @@ namespace EnterprisePOS.Data
 
     public sealed class ProductRepository
     {
-        // Searches SKU, barcode and name. An empty search returns every product.
-        // The Image property stays null here; the list does not need the pictures.
         public List<Product> Search(string search, bool includeInactive = false)
         {
             var list = new List<Product>();
@@ -448,7 +275,6 @@ namespace EnterprisePOS.Data
             return list;
         }
 
-        // One product including its picture. Returns null when the id does not exist.
         public Product GetById(int productId)
         {
             using (var connection = Db.Open())
@@ -464,7 +290,6 @@ namespace EnterprisePOS.Data
             }
         }
 
-        // Adds a product. Starting stock is logged in InventoryLog by the stored procedure.
         public int Insert(Product p, int userId)
         {
             try
@@ -492,8 +317,6 @@ namespace EnterprisePOS.Data
             }
         }
 
-        // Changes a product. Stock is not touched here; stock changes go through the inventory adjustment.
-        // The picture is only replaced when changeImage is true.
         public void Update(Product p, bool changeImage)
         {
             try
@@ -522,7 +345,6 @@ namespace EnterprisePOS.Data
             }
         }
 
-        // Soft delete: the row stays so old sales keep their product.
         public void Deactivate(int productId)
         {
             try
@@ -541,8 +363,6 @@ namespace EnterprisePOS.Data
             }
         }
 
-        // Adds (positive) or removes (negative) stock and writes the reason to InventoryLog.
-        // Returns the new stock level. The procedure refuses a change that would go below zero.
         public int AdjustStock(int productId, int change, string reason, int userId)
         {
             try
@@ -583,19 +403,16 @@ namespace EnterprisePOS.Data
             };
         }
 
-        // DECIMAL(18,2) parameter, matching the table columns
         private static SqlParameter Money(string name, decimal value)
         {
             return new SqlParameter(name, SqlDbType.Decimal) { Precision = 18, Scale = 2, Value = value };
         }
 
-        // A null picture must be sent as a typed VARBINARY(MAX) null, or SQL Server rejects the call
         private static SqlParameter ImageParameter(byte[] image)
         {
             return new SqlParameter("@Image", SqlDbType.VarBinary, -1) { Value = (object)image ?? DBNull.Value };
         }
 
-        // Turns database errors into messages a person can read
         private static Exception Friendly(SqlException ex)
         {
             if (ex.Number == 2627 || ex.Number == 2601)
@@ -607,7 +424,6 @@ namespace EnterprisePOS.Data
                 return new InvalidOperationException("A product with the same value already exists.");
             }
 
-            // Errors raised with THROW in the teacher's procedures (50000 and up) already read well
             if (ex.Number >= 50000) return new InvalidOperationException(ex.Message);
 
             return ex;

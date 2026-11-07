@@ -90,11 +90,9 @@ namespace EnterprisePOS
             }
             catch (Exception ex)
             {
-                // The full error goes to the log file; the screen shows a safe message.
                 AppLog.Error("Sign-in failed", ex);
                 lblStatus.Text = "Unable to connect. Contact the administrator.";
 
-                // An error after Hide() must not leave the program running with no window.
                 if (!Visible)
                 {
                     Show();
