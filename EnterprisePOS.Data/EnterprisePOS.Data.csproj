@@ -52,7 +52,6 @@
     <Compile Include="Repositories.cs" />
     <Compile Include="Security.cs" />
     <Compile Include="SqliteDb.cs" />
-    <Compile Include="UserRepository.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\EnterprisePOS.Domain\EnterprisePOS.Domain.csproj">
