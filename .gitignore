@@ -15,8 +15,6 @@
 # Secrets and private configuration
 appsettings.local.json
 *.secrets.json
-EnterprisePOS/App.Release.config
-EnterprisePOS/connectionStrings.local.config
 
 # Logs and local media
 logs/
