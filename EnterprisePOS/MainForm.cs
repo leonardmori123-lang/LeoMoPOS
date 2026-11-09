@@ -1,5 +1,4 @@
 using System;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -55,7 +54,6 @@ namespace EnterprisePOS
                 admin.DropDownItems.Add("Users", null, (s, e) => ShowChild(new UserAdminForm(currentUser)));
                 admin.DropDownItems.Add(new ToolStripSeparator());
                 admin.DropDownItems.Add("Check database connection", null, CheckConnectionMenuItem_Click);
-                admin.DropDownItems.Add("Check built-in database (SQLite)", null, CheckBuiltInDatabaseMenuItem_Click);
                 admin.DropDownItems.Add("Open log folder", null, OpenLogFolderMenuItem_Click);
                 admin.DropDownItems.Add("Simulate error (test)", null, SimulateErrorMenuItem_Click);
                 menu.Items.Add(admin);
@@ -149,31 +147,14 @@ namespace EnterprisePOS
         {
             try
             {
-                using (SqlConnection connection = Db.Open())
-                {
-                    MessageBox.Show(
-                        "Connected to database \"" + connection.Database + "\" on " + connection.DataSource + ".",
-                        "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                MessageBox.Show(SqliteDb.Describe(), "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void CheckBuiltInDatabaseMenuItem_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                MessageBox.Show(SqliteDb.Describe(), "Built-in database", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                string reference = AppLog.Error("Built-in database check failed", ex);
+                string reference = AppLog.Error("Database check failed", ex);
                 MessageBox.Show(
                     ex.Message + Environment.NewLine + Environment.NewLine + "Reference: " + reference,
-                    "Built-in database", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -265,4 +246,4 @@ namespace EnterprisePOS
             return button;
         }
     }
-}
+}   
