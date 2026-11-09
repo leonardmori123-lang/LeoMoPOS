@@ -1,43 +1,36 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Data.SqlClient;
+using System.Data.SQLite;
 using System.Globalization;
-using System.Text;
 using EnterprisePOS.Domain;
 
 namespace EnterprisePOS.Data
 {
     public sealed class UserRepository
     {
-        // Returns the user when the username exists, the account is active and the password matches.
-        // Returns null in every other case, so the caller cannot tell which part was wrong.
         public User Login(string username, string password)
         {
-            User user;
-            string salt;
-            string hash;
+            if (username == null) username = string.Empty;
 
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Login", connection))
+            User user = null;
+            string salt = string.Empty;
+            string hash = string.Empty;
+
+            string sql = "SELECT UserId, Username, PasswordHash, Salt, FullName, RoleId, IsActive " +
+                         "FROM Users WHERE Username = @username";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
             {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@Username", username ?? string.Empty);
+                command.Parameters.AddWithValue("@username", username);
 
-                using (var reader = command.ExecuteReader())
+                using (SQLiteDataReader reader = command.ExecuteReader())
                 {
                     if (!reader.Read()) return null;
 
-                    salt = (string)reader["Salt"];
-                    hash = (string)reader["PasswordHash"];
-                    user = new User
-                    {
-                        Id = (int)reader["UserId"],
-                        Username = (string)reader["Username"],
-                        FullName = (string)reader["FullName"],
-                        Role = (UserRole)(int)reader["RoleId"],
-                        IsActive = (bool)reader["IsActive"]
-                    };
+                    salt = reader.GetString(reader.GetOrdinal("Salt"));
+                    hash = reader.GetString(reader.GetOrdinal("PasswordHash"));
+                    user = ReadUser(reader);
                 }
             }
 
@@ -48,122 +41,176 @@ namespace EnterprisePOS.Data
             return user;
         }
 
-        // Every user, active or not (no password data)
         public List<User> List()
         {
-            var list = new List<User>();
+            List<User> list = new List<User>();
 
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_User_List", connection))
+            string sql = "SELECT UserId, Username, FullName, RoleId, IsActive, LastLoginAt " +
+                         "FROM Users ORDER BY Username";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            using (SQLiteDataReader reader = command.ExecuteReader())
             {
-                command.CommandType = CommandType.StoredProcedure;
+                int lastLoginColumn = reader.GetOrdinal("LastLoginAt");
 
-                using (var reader = command.ExecuteReader())
+                while (reader.Read())
                 {
-                    while (reader.Read())
+                    User user = ReadUser(reader);
+                    if (!reader.IsDBNull(lastLoginColumn))
                     {
-                        list.Add(new User
-                        {
-                            Id = (int)reader["UserId"],
-                            Username = (string)reader["Username"],
-                            FullName = (string)reader["FullName"],
-                            Role = (UserRole)(int)reader["RoleId"],
-                            IsActive = (bool)reader["IsActive"],
-                            LastLoginAt = reader["LastLoginAt"] as DateTime?
-                        });
+                        user.LastLoginAt = reader.GetDateTime(lastLoginColumn);
                     }
+                    list.Add(user);
                 }
             }
+
             return list;
         }
 
-        // Adds a user. The password is salted and hashed here; only the hash and the salt are stored.
         public int Create(User user, string password)
         {
             string salt = PasswordHasher.NewSalt();
             string hash = PasswordHasher.Hash(salt, password);
 
+            string sql = "INSERT INTO Users (Username, PasswordHash, Salt, FullName, RoleId) " +
+                         "VALUES (@username, @hash, @salt, @fullName, @roleId)";
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_Create", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@Username", user.Username);
-                    command.Parameters.AddWithValue("@PasswordHash", hash);
-                    command.Parameters.AddWithValue("@Salt", salt);
-                    command.Parameters.AddWithValue("@FullName", user.FullName);
-                    command.Parameters.AddWithValue("@RoleId", (int)user.Role);
-                    return Convert.ToInt32(command.ExecuteScalar());
+                    command.Parameters.AddWithValue("@username", user.Username);
+                    command.Parameters.AddWithValue("@hash", hash);
+                    command.Parameters.AddWithValue("@salt", salt);
+                    command.Parameters.AddWithValue("@fullName", user.FullName);
+                    command.Parameters.AddWithValue("@roleId", (int)user.Role);
+                    command.ExecuteNonQuery();
+
+                    return (int)connection.LastInsertRowId;
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
-                throw Friendly(ex);
+                if (IsDuplicate(ex)) throw new InvalidOperationException("That username is already taken.");
+                throw;
             }
         }
 
-        // Changes the name, role and active flag of an existing user
         public void Update(User user)
         {
+            int newActive = 0;
+            if (user.IsActive) newActive = 1;
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_Update", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@UserId", user.Id);
-                    command.Parameters.AddWithValue("@FullName", user.FullName);
-                    command.Parameters.AddWithValue("@RoleId", (int)user.Role);
-                    command.Parameters.AddWithValue("@IsActive", user.IsActive);
-                    command.ExecuteNonQuery();
+                    SqliteDb.BeginWrite(connection);
+                    try
+                    {
+                        int oldRole = 0;
+                        bool oldActive = false;
+
+                        string findSql = "SELECT RoleId, IsActive FROM Users WHERE UserId = @userId";
+                        using (SQLiteCommand find = new SQLiteCommand(findSql, connection))
+                        {
+                            find.Parameters.AddWithValue("@userId", user.Id);
+                            using (SQLiteDataReader reader = find.ExecuteReader())
+                            {
+                                if (!reader.Read()) throw new InvalidOperationException("User not found.");
+                                oldRole = reader.GetInt32(0);
+                                oldActive = reader.GetBoolean(1);
+                            }
+                        }
+
+                        int admin = (int)UserRole.Admin;
+                        bool wasActiveAdmin = (oldRole == admin) && oldActive;
+                        bool stopsBeingActiveAdmin = ((int)user.Role != admin) || (newActive == 0);
+
+                        if (wasActiveAdmin && stopsBeingActiveAdmin)
+                        {
+                            string countSql = "SELECT COUNT(*) FROM Users WHERE UserId <> @userId AND RoleId = @admin AND IsActive = 1";
+                            using (SQLiteCommand count = new SQLiteCommand(countSql, connection))
+                            {
+                                count.Parameters.AddWithValue("@userId", user.Id);
+                                count.Parameters.AddWithValue("@admin", admin);
+                                long otherAdmins = Convert.ToInt64(count.ExecuteScalar());
+                                if (otherAdmins == 0) throw new InvalidOperationException("At least one active admin must remain.");
+                            }
+                        }
+
+                        string updateSql = "UPDATE Users SET FullName = @fullName, RoleId = @roleId, IsActive = @isActive " +
+                                           "WHERE UserId = @userId";
+                        using (SQLiteCommand update = new SQLiteCommand(updateSql, connection))
+                        {
+                            update.Parameters.AddWithValue("@fullName", user.FullName);
+                            update.Parameters.AddWithValue("@roleId", (int)user.Role);
+                            update.Parameters.AddWithValue("@isActive", newActive);
+                            update.Parameters.AddWithValue("@userId", user.Id);
+                            update.ExecuteNonQuery();
+                        }
+
+                        SqliteDb.Commit(connection);
+                    }
+                    catch
+                    {
+                        SqliteDb.Rollback(connection);
+                        throw;
+                    }
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
-                throw Friendly(ex);
+                if (IsDuplicate(ex)) throw new InvalidOperationException("That username is already taken.");
+                throw;
             }
         }
 
-        // Sets a new password. A fresh salt is made every time, then only the hash and the salt are stored.
         public void ResetPassword(int userId, string newPassword)
         {
             string salt = PasswordHasher.NewSalt();
             string hash = PasswordHasher.Hash(salt, newPassword);
 
-            try
+            string sql = "UPDATE Users SET PasswordHash = @hash, Salt = @salt WHERE UserId = @userId";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_User_ResetPassword", connection))
-                {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@UserId", userId);
-                    command.Parameters.AddWithValue("@PasswordHash", hash);
-                    command.Parameters.AddWithValue("@Salt", salt);
-                    command.ExecuteNonQuery();
-                }
-            }
-            catch (SqlException ex)
-            {
-                throw Friendly(ex);
+                command.Parameters.AddWithValue("@hash", hash);
+                command.Parameters.AddWithValue("@salt", salt);
+                command.Parameters.AddWithValue("@userId", userId);
+
+                int rows = command.ExecuteNonQuery();
+                if (rows == 0) throw new InvalidOperationException("User not found.");
             }
         }
 
-        // 2627 / 2601 = the UNIQUE constraint on Username. 50000 and up are the messages written in the SQL script.
-        private static Exception Friendly(SqlException ex)
+        private static User ReadUser(SQLiteDataReader reader)
         {
-            if (ex.Number == 2627 || ex.Number == 2601) return new InvalidOperationException("That username is already taken.");
-            if (ex.Number >= 50000) return new InvalidOperationException(ex.Message);
-            return ex;
+            User user = new User();
+            user.Id = reader.GetInt32(reader.GetOrdinal("UserId"));
+            user.Username = reader.GetString(reader.GetOrdinal("Username"));
+            user.FullName = reader.GetString(reader.GetOrdinal("FullName"));
+            user.Role = (UserRole)reader.GetInt32(reader.GetOrdinal("RoleId"));
+            user.IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive"));
+            return user;
+        }
+
+        private static bool IsDuplicate(SQLiteException ex)
+        {
+            return ex.Message.Contains("UNIQUE constraint failed");
         }
 
         private static void TouchLogin(int userId)
         {
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_User_TouchLogin", connection))
+            string sql = "UPDATE Users SET LastLoginAt = datetime('now', 'localtime') WHERE UserId = @userId";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
             {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@UserId", userId);
+                command.Parameters.AddWithValue("@userId", userId);
                 command.ExecuteNonQuery();
             }
         }
@@ -173,270 +220,59 @@ namespace EnterprisePOS.Data
     {
         public List<Category> List()
         {
-            var list = new List<Category>();
+            List<Category> list = new List<Category>();
 
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Category_List", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
+            string sql = "SELECT CategoryId, Name, Description FROM Categories ORDER BY Name";
 
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        list.Add(new Category
-                        {
-                            Id = (int)reader["CategoryId"],
-                            Name = (string)reader["Name"],
-                            Description = reader["Description"] as string
-                        });
-                    }
-                }
-            }
-
-            return list;
-        }
-    }
-
-    public sealed class OrderRepository
-    {
-        // Saves a whole order. The stored procedure does everything in one transaction:
-        // it takes prices from the Products table, checks stock, writes the order and its lines,
-        // lowers the stock and logs each movement. If anything fails, nothing is saved.
-        public int Create(Order order, decimal taxRatePercent)
-        {
-            // <Items><Item ProductId="1" Quantity="2"/></Items>  (only whole numbers go in, so no escaping is needed)
-            var xml = new StringBuilder("<Items>");
-            foreach (var line in order.Lines)
-            {
-                xml.Append("<Item ProductId=\"")
-                   .Append(line.ProductId.ToString(CultureInfo.InvariantCulture))
-                   .Append("\" Quantity=\"")
-                   .Append(line.Quantity.ToString(CultureInfo.InvariantCulture))
-                   .Append("\"/>");
-            }
-            xml.Append("</Items>");
-
-            try
-            {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_Order_Create", connection))
-                {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@UserId", order.UserId);
-                    command.Parameters.AddWithValue("@CustomerId", (object)order.CustomerId ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@PaymentMethod", order.PaymentMethod);
-                    command.Parameters.Add(DecimalParam("@DiscountAmount", order.DiscountAmount, 18, 2));
-                    command.Parameters.Add(DecimalParam("@TaxRate", taxRatePercent, 5, 2));
-                    command.Parameters.Add(DecimalParam("@AmountPaid", order.AmountPaid, 18, 2));
-                    command.Parameters.Add(new SqlParameter("@ItemsXml", SqlDbType.Xml) { Value = xml.ToString() });
-                    return Convert.ToInt32(command.ExecuteScalar());
-                }
-            }
-            catch (SqlException ex)
-            {
-                // The messages raised by the teacher's procedure (for example "Insufficient stock for ...") read well as they are.
-                if (ex.Number >= 50000) throw new InvalidOperationException(ex.Message);
-                throw;
-            }
-        }
-
-        // One saved order with its lines. Returns null when the id does not exist.
-        public Order GetById(int orderId)
-        {
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Order_GetById", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@OrderId", orderId);
-
-                using (var reader = command.ExecuteReader())
-                {
-                    if (!reader.Read()) return null;
-
-                    var order = new Order
-                    {
-                        Id = (int)reader["OrderId"],
-                        OrderNumber = (string)reader["OrderNumber"],
-                        CustomerId = reader["CustomerId"] as int?,
-                        UserId = (int)reader["UserId"],
-                        OrderDate = (DateTime)reader["OrderDate"],
-                        Subtotal = (decimal)reader["Subtotal"],
-                        TaxAmount = (decimal)reader["TaxAmount"],
-                        DiscountAmount = (decimal)reader["DiscountAmount"],
-                        Total = (decimal)reader["Total"],
-                        PaymentMethod = (string)reader["PaymentMethod"],
-                        AmountPaid = (decimal)reader["AmountPaid"],
-                        ChangeDue = (decimal)reader["ChangeDue"],
-                        Status = (string)reader["Status"]
-                    };
-
-                    if (reader.NextResult())
-                    {
-                        while (reader.Read())
-                        {
-                            order.Lines.Add(new CartLine
-                            {
-                                ProductId = (int)reader["ProductId"],
-                                Sku = (string)reader["Sku"],
-                                ProductName = (string)reader["ProductName"],
-                                Quantity = (int)reader["Quantity"],
-                                UnitPrice = (decimal)reader["UnitPrice"]
-                            });
-                        }
-                    }
-
-                    return order;
-                }
-            }
-        }
-
-        private static SqlParameter DecimalParam(string name, decimal value, byte precision, byte scale)
-        {
-            return new SqlParameter(name, SqlDbType.Decimal) { Precision = precision, Scale = scale, Value = value };
-        }
-    }
-
-    // Reads the teacher's report procedures. Each one adds a day to the end date itself,
-    // so the end date passed in is the last day to include.
-    public sealed class ReportRepository
-    {
-        public List<DailySales> GetDailySales(DateTime start, DateTime end)
-        {
-            var list = new List<DailySales>();
-            using (var connection = Db.Open())
-            using (var command = RangeCommand(connection, "dbo.usp_Report_DailySales", start, end))
-            using (var reader = command.ExecuteReader())
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            using (SQLiteDataReader reader = command.ExecuteReader())
             {
                 while (reader.Read())
                 {
-                    list.Add(new DailySales
-                    {
-                        SaleDate = (DateTime)reader["SaleDate"],
-                        OrderCount = Convert.ToInt32(reader["OrderCount"]),
-                        Revenue = Convert.ToDecimal(reader["Revenue"])
-                    });
+                    Category category = new Category();
+                    category.Id = ReaderHelper.GetInt(reader, "CategoryId");
+                    category.Name = ReaderHelper.GetString(reader, "Name");
+                    category.Description = ReaderHelper.GetString(reader, "Description");
+                    list.Add(category);
                 }
             }
+
             return list;
-        }
-
-        public List<TopProduct> GetTopProducts(DateTime start, DateTime end, int top)
-        {
-            var list = new List<TopProduct>();
-            using (var connection = Db.Open())
-            using (var command = RangeCommand(connection, "dbo.usp_Report_TopProducts", start, end))
-            {
-                command.Parameters.AddWithValue("@Top", top);
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        list.Add(new TopProduct
-                        {
-                            ProductName = (string)reader["ProductName"],
-                            QtySold = Convert.ToInt32(reader["QtySold"]),
-                            Revenue = Convert.ToDecimal(reader["Revenue"])
-                        });
-                    }
-                }
-            }
-            return list;
-        }
-
-        public List<CategorySales> GetSalesByCategory(DateTime start, DateTime end)
-        {
-            var list = new List<CategorySales>();
-            using (var connection = Db.Open())
-            using (var command = RangeCommand(connection, "dbo.usp_Report_SalesByCategory", start, end))
-            using (var reader = command.ExecuteReader())
-            {
-                while (reader.Read())
-                {
-                    list.Add(new CategorySales
-                    {
-                        CategoryName = (string)reader["CategoryName"],
-                        Revenue = Convert.ToDecimal(reader["Revenue"])
-                    });
-                }
-            }
-            return list;
-        }
-
-        // Active products at or below their reorder level, right now (no date range)
-        public List<LowStockItem> GetLowStock()
-        {
-            var list = new List<LowStockItem>();
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Report_LowStock", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        list.Add(new LowStockItem
-                        {
-                            ProductId = Convert.ToInt32(reader["ProductId"]),
-                            Sku = (string)reader["Sku"],
-                            Name = (string)reader["Name"],
-                            StockQty = Convert.ToInt32(reader["StockQty"]),
-                            ReorderLevel = Convert.ToInt32(reader["ReorderLevel"])
-                        });
-                    }
-                }
-            }
-            return list;
-        }
-
-        // The four numbers on the main screen (today's sales, today's orders, low stock count, active products)
-        public DashboardStats GetDashboard()
-        {
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Report_Dashboard", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                using (var reader = command.ExecuteReader())
-                {
-                    if (!reader.Read()) return new DashboardStats();
-
-                    return new DashboardStats
-                    {
-                        TodaySales = Convert.ToDecimal(reader["TodaySales"]),
-                        TodayOrders = Convert.ToInt32(reader["TodayOrders"]),
-                        LowStockCount = Convert.ToInt32(reader["LowStockCount"]),
-                        ActiveProducts = Convert.ToInt32(reader["ActiveProducts"])
-                    };
-                }
-            }
-        }
-
-        private static SqlCommand RangeCommand(SqlConnection connection, string procedure, DateTime start, DateTime end)
-        {
-            var command = new SqlCommand(procedure, connection) { CommandType = CommandType.StoredProcedure };
-            command.Parameters.Add(new SqlParameter("@From", SqlDbType.DateTime) { Value = start });
-            command.Parameters.Add(new SqlParameter("@To", SqlDbType.DateTime) { Value = end });
-            return command;
         }
     }
 
     public sealed class ProductRepository
     {
-        // Searches SKU, barcode and name. An empty search returns every product.
-        // The Image property stays null here; the list does not need the pictures.
         public List<Product> Search(string search, bool includeInactive = false)
         {
-            var list = new List<Product>();
+            List<Product> list = new List<Product>();
 
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Product_Search", connection))
+            string text = string.Empty;
+            if (!string.IsNullOrWhiteSpace(search)) text = search.Trim();
+
+            int showInactive = 0;
+            if (includeInactive) showInactive = 1;
+
+            string sql =
+                "SELECT p.ProductId, p.Sku, p.Barcode, p.Name, p.CategoryId, c.Name AS CategoryName, " +
+                "       p.Price, p.Cost, p.StockQty, p.ReorderLevel, p.IsActive " +
+                "FROM Products p " +
+                "JOIN Categories c ON c.CategoryId = p.CategoryId " +
+                "WHERE (@showInactive = 1 OR p.IsActive = 1) " +
+                "  AND (@search = '' " +
+                "       OR p.Sku LIKE '%' || @search || '%' " +
+                "       OR p.Barcode LIKE '%' || @search || '%' " +
+                "       OR p.Name LIKE '%' || @search || '%') " +
+                "ORDER BY p.Name COLLATE NOCASE";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
             {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@Search",
-                    string.IsNullOrWhiteSpace(search) ? (object)DBNull.Value : search.Trim());
-                command.Parameters.AddWithValue("@IncludeInactive", includeInactive);
+                command.Parameters.AddWithValue("@showInactive", showInactive);
+                command.Parameters.AddWithValue("@search", text);
 
-                using (var reader = command.ExecuteReader())
+                using (SQLiteDataReader reader = command.ExecuteReader())
                 {
                     while (reader.Read())
                     {
@@ -448,169 +284,736 @@ namespace EnterprisePOS.Data
             return list;
         }
 
-        // One product including its picture. Returns null when the id does not exist.
         public Product GetById(int productId)
         {
-            using (var connection = Db.Open())
-            using (var command = new SqlCommand("dbo.usp_Product_GetById", connection))
-            {
-                command.CommandType = CommandType.StoredProcedure;
-                command.Parameters.AddWithValue("@ProductId", productId);
+            string sql =
+                "SELECT p.ProductId, p.Sku, p.Barcode, p.Name, p.CategoryId, c.Name AS CategoryName, " +
+                "       p.Price, p.Cost, p.StockQty, p.ReorderLevel, p.Image, p.IsActive " +
+                "FROM Products p " +
+                "JOIN Categories c ON c.CategoryId = p.CategoryId " +
+                "WHERE p.ProductId = @productId";
 
-                using (var reader = command.ExecuteReader())
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            {
+                command.Parameters.AddWithValue("@productId", productId);
+
+                using (SQLiteDataReader reader = command.ExecuteReader())
                 {
-                    return reader.Read() ? ReadProduct(reader, true) : null;
+                    if (!reader.Read()) return null;
+                    return ReadProduct(reader, true);
                 }
             }
         }
 
-        // Adds a product. Starting stock is logged in InventoryLog by the stored procedure.
         public int Insert(Product p, int userId)
         {
+            string sql =
+                "INSERT INTO Products (Sku, Barcode, Name, CategoryId, Price, Cost, StockQty, ReorderLevel, Image) " +
+                "VALUES (@sku, @barcode, @name, @categoryId, @price, @cost, @stockQty, @reorderLevel, @image)";
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_Product_Insert", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@Sku", p.Sku);
-                    command.Parameters.AddWithValue("@Barcode", (object)p.Barcode ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@Name", p.Name);
-                    command.Parameters.AddWithValue("@CategoryId", p.CategoryId);
-                    command.Parameters.Add(Money("@Price", p.Price));
-                    command.Parameters.Add(Money("@Cost", p.Cost));
-                    command.Parameters.AddWithValue("@StockQty", p.StockQty);
-                    command.Parameters.AddWithValue("@ReorderLevel", p.ReorderLevel);
-                    command.Parameters.Add(ImageParameter(p.Image));
-                    command.Parameters.AddWithValue("@UserId", userId);
-                    return Convert.ToInt32(command.ExecuteScalar());
+                    SqliteDb.BeginWrite(connection);
+                    try
+                    {
+                        using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+                        {
+                            command.Parameters.AddWithValue("@sku", p.Sku);
+                            command.Parameters.AddWithValue("@barcode", TextOrNull(p.Barcode));
+                            command.Parameters.AddWithValue("@name", p.Name);
+                            command.Parameters.AddWithValue("@categoryId", p.CategoryId);
+                            command.Parameters.AddWithValue("@price", p.Price);
+                            command.Parameters.AddWithValue("@cost", p.Cost);
+                            command.Parameters.AddWithValue("@stockQty", p.StockQty);
+                            command.Parameters.AddWithValue("@reorderLevel", p.ReorderLevel);
+                            command.Parameters.AddWithValue("@image", BytesOrNull(p.Image));
+                            command.ExecuteNonQuery();
+                        }
+
+                        int newId = (int)connection.LastInsertRowId;
+
+                        if (p.StockQty > 0)
+                        {
+                            AddLog(connection, newId, p.StockQty, "Initial stock", userId);
+                        }
+
+                        SqliteDb.Commit(connection);
+                        return newId;
+                    }
+                    catch
+                    {
+                        SqliteDb.Rollback(connection);
+                        throw;
+                    }
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
                 throw Friendly(ex);
             }
         }
 
-        // Changes a product. Stock is not touched here; stock changes go through the inventory adjustment.
-        // The picture is only replaced when changeImage is true.
         public void Update(Product p, bool changeImage)
         {
+            int active = 0;
+            if (p.IsActive) active = 1;
+
+            int replaceImage = 0;
+            if (changeImage) replaceImage = 1;
+
+            string sql =
+                "UPDATE Products " +
+                "SET Sku = @sku, Barcode = @barcode, Name = @name, CategoryId = @categoryId, " +
+                "    Price = @price, Cost = @cost, ReorderLevel = @reorderLevel, IsActive = @isActive, " +
+                "    Image = CASE WHEN @replaceImage = 1 THEN @image ELSE Image END, " +
+                "    UpdatedAt = datetime('now', 'localtime') " +
+                "WHERE ProductId = @productId";
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_Product_Update", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@ProductId", p.Id);
-                    command.Parameters.AddWithValue("@Sku", p.Sku);
-                    command.Parameters.AddWithValue("@Barcode", (object)p.Barcode ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@Name", p.Name);
-                    command.Parameters.AddWithValue("@CategoryId", p.CategoryId);
-                    command.Parameters.Add(Money("@Price", p.Price));
-                    command.Parameters.Add(Money("@Cost", p.Cost));
-                    command.Parameters.AddWithValue("@ReorderLevel", p.ReorderLevel);
-                    command.Parameters.AddWithValue("@IsActive", p.IsActive);
-                    command.Parameters.Add(ImageParameter(p.Image));
-                    command.Parameters.AddWithValue("@ChangeImage", changeImage);
-                    command.ExecuteNonQuery();
+                    command.Parameters.AddWithValue("@sku", p.Sku);
+                    command.Parameters.AddWithValue("@barcode", TextOrNull(p.Barcode));
+                    command.Parameters.AddWithValue("@name", p.Name);
+                    command.Parameters.AddWithValue("@categoryId", p.CategoryId);
+                    command.Parameters.AddWithValue("@price", p.Price);
+                    command.Parameters.AddWithValue("@cost", p.Cost);
+                    command.Parameters.AddWithValue("@reorderLevel", p.ReorderLevel);
+                    command.Parameters.AddWithValue("@isActive", active);
+                    command.Parameters.AddWithValue("@replaceImage", replaceImage);
+                    command.Parameters.AddWithValue("@image", BytesOrNull(p.Image));
+                    command.Parameters.AddWithValue("@productId", p.Id);
+
+                    int rows = command.ExecuteNonQuery();
+                    if (rows == 0) throw new InvalidOperationException("Product not found.");
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
                 throw Friendly(ex);
             }
         }
 
-        // Soft delete: the row stays so old sales keep their product.
         public void Deactivate(int productId)
         {
+            string sql = "UPDATE Products SET IsActive = 0, UpdatedAt = datetime('now', 'localtime') WHERE ProductId = @productId";
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_Product_Delete", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@ProductId", productId);
-                    command.ExecuteNonQuery();
+                    command.Parameters.AddWithValue("@productId", productId);
+
+                    int rows = command.ExecuteNonQuery();
+                    if (rows == 0) throw new InvalidOperationException("Product not found.");
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
                 throw Friendly(ex);
             }
         }
 
-        // Adds (positive) or removes (negative) stock and writes the reason to InventoryLog.
-        // Returns the new stock level. The procedure refuses a change that would go below zero.
         public int AdjustStock(int productId, int change, string reason, int userId)
         {
+            string findSql = "SELECT StockQty FROM Products WHERE ProductId = @productId";
+            string updateSql = "UPDATE Products SET StockQty = @newStock, UpdatedAt = datetime('now', 'localtime') WHERE ProductId = @productId";
+
             try
             {
-                using (var connection = Db.Open())
-                using (var command = new SqlCommand("dbo.usp_Inventory_Adjust", connection))
+                using (SQLiteConnection connection = SqliteDb.Open())
                 {
-                    command.CommandType = CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@ProductId", productId);
-                    command.Parameters.AddWithValue("@ChangeQty", change);
-                    command.Parameters.AddWithValue("@Reason", reason);
-                    command.Parameters.AddWithValue("@UserId", userId);
-                    return Convert.ToInt32(command.ExecuteScalar());
+                    SqliteDb.BeginWrite(connection);
+                    try
+                    {
+                        int current = 0;
+                        using (SQLiteCommand find = new SQLiteCommand(findSql, connection))
+                        {
+                            find.Parameters.AddWithValue("@productId", productId);
+                            object result = find.ExecuteScalar();
+                            if (result == null) throw new InvalidOperationException("Product not found.");
+                            current = Convert.ToInt32(result);
+                        }
+
+                        int newStock = current + change;
+                        if (newStock < 0) throw new InvalidOperationException("Adjustment would make stock negative.");
+
+                        using (SQLiteCommand update = new SQLiteCommand(updateSql, connection))
+                        {
+                            update.Parameters.AddWithValue("@newStock", newStock);
+                            update.Parameters.AddWithValue("@productId", productId);
+                            update.ExecuteNonQuery();
+                        }
+
+                        AddLog(connection, productId, change, reason, userId);
+
+                        SqliteDb.Commit(connection);
+                        return newStock;
+                    }
+                    catch
+                    {
+                        SqliteDb.Rollback(connection);
+                        throw;
+                    }
                 }
             }
-            catch (SqlException ex)
+            catch (SQLiteException ex)
             {
                 throw Friendly(ex);
             }
         }
 
-        private static Product ReadProduct(SqlDataReader reader, bool withImage)
+        internal static void AddLog(SQLiteConnection connection, int productId, int change, string reason, int userId)
         {
-            return new Product
+            string sql = "INSERT INTO InventoryLog (ProductId, ChangeQty, Reason, UserId) VALUES (@productId, @change, @reason, @userId)";
+
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
             {
-                Id = (int)reader["ProductId"],
-                Sku = (string)reader["Sku"],
-                Barcode = reader["Barcode"] as string,
-                Name = (string)reader["Name"],
-                CategoryId = (int)reader["CategoryId"],
-                CategoryName = (string)reader["CategoryName"],
-                Price = (decimal)reader["Price"],
-                Cost = (decimal)reader["Cost"],
-                StockQty = (int)reader["StockQty"],
-                ReorderLevel = (int)reader["ReorderLevel"],
-                Image = withImage ? reader["Image"] as byte[] : null,
-                IsActive = (bool)reader["IsActive"]
-            };
+                command.Parameters.AddWithValue("@productId", productId);
+                command.Parameters.AddWithValue("@change", change);
+                command.Parameters.AddWithValue("@reason", reason);
+                command.Parameters.AddWithValue("@userId", userId);
+                command.ExecuteNonQuery();
+            }
         }
 
-        // DECIMAL(18,2) parameter, matching the table columns
-        private static SqlParameter Money(string name, decimal value)
+        private static Product ReadProduct(SQLiteDataReader reader, bool withImage)
         {
-            return new SqlParameter(name, SqlDbType.Decimal) { Precision = 18, Scale = 2, Value = value };
-        }
+            Product product = new Product();
+            product.Id = ReaderHelper.GetInt(reader, "ProductId");
+            product.Sku = ReaderHelper.GetString(reader, "Sku");
+            product.Barcode = ReaderHelper.GetString(reader, "Barcode");
+            product.Name = ReaderHelper.GetString(reader, "Name");
+            product.CategoryId = ReaderHelper.GetInt(reader, "CategoryId");
+            product.CategoryName = ReaderHelper.GetString(reader, "CategoryName");
+            product.Price = ReaderHelper.GetDecimal(reader, "Price");
+            product.Cost = ReaderHelper.GetDecimal(reader, "Cost");
+            product.StockQty = ReaderHelper.GetInt(reader, "StockQty");
+            product.ReorderLevel = ReaderHelper.GetInt(reader, "ReorderLevel");
+            product.IsActive = ReaderHelper.GetBool(reader, "IsActive");
 
-        // A null picture must be sent as a typed VARBINARY(MAX) null, or SQL Server rejects the call
-        private static SqlParameter ImageParameter(byte[] image)
-        {
-            return new SqlParameter("@Image", SqlDbType.VarBinary, -1) { Value = (object)image ?? DBNull.Value };
-        }
-
-        // Turns database errors into messages a person can read
-        private static Exception Friendly(SqlException ex)
-        {
-            if (ex.Number == 2627 || ex.Number == 2601)
+            if (withImage)
             {
-                if (ex.Message.IndexOf("Sku", StringComparison.OrdinalIgnoreCase) >= 0)
+                product.Image = ReaderHelper.GetBytes(reader, "Image");
+            }
+
+            return product;
+        }
+
+        private static object TextOrNull(string text)
+        {
+            if (text == null) return DBNull.Value;
+            return text;
+        }
+
+        private static object BytesOrNull(byte[] bytes)
+        {
+            if (bytes == null) return DBNull.Value;
+            return bytes;
+        }
+
+        private static Exception Friendly(SQLiteException ex)
+        {
+            string message = ex.Message;
+
+            if (message.Contains("UNIQUE constraint failed"))
+            {
+                if (message.IndexOf("Sku", StringComparison.OrdinalIgnoreCase) >= 0)
                     return new InvalidOperationException("That SKU is already used by another product.");
-                if (ex.Message.IndexOf("Barcode", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (message.IndexOf("Barcode", StringComparison.OrdinalIgnoreCase) >= 0)
                     return new InvalidOperationException("That barcode is already used by another product.");
                 return new InvalidOperationException("A product with the same value already exists.");
             }
 
-            // Errors raised with THROW in the teacher's procedures (50000 and up) already read well
-            if (ex.Number >= 50000) return new InvalidOperationException(ex.Message);
-
             return ex;
+        }
+    }
+
+    public sealed class OrderRepository
+    {
+        private sealed class OrderItem
+        {
+            public int ProductId { get; set; }
+            public string Name { get; set; }
+            public decimal Price { get; set; }
+            public int Stock { get; set; }
+            public int Quantity { get; set; }
+        }
+
+        public int Create(Order order, decimal taxRatePercent)
+        {
+            SortedDictionary<int, int> wanted = new SortedDictionary<int, int>();
+            foreach (CartLine line in order.Lines)
+            {
+                if (wanted.ContainsKey(line.ProductId))
+                {
+                    wanted[line.ProductId] = wanted[line.ProductId] + line.Quantity;
+                }
+                else
+                {
+                    wanted.Add(line.ProductId, line.Quantity);
+                }
+            }
+
+            if (wanted.Count == 0) throw new InvalidOperationException("The order has no items.");
+
+            foreach (KeyValuePair<int, int> pair in wanted)
+            {
+                if (pair.Value <= 0) throw new InvalidOperationException("Invalid item quantity.");
+            }
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            {
+                SqliteDb.BeginWrite(connection);
+                try
+                {
+                    List<OrderItem> items = LoadItems(connection, wanted);
+
+                    foreach (OrderItem item in items)
+                    {
+                        if (item.Stock < item.Quantity)
+                        {
+                            throw new InvalidOperationException(
+                                "Insufficient stock for " + item.Name + " (available: " + item.Stock + ").");
+                        }
+                    }
+
+                    decimal subtotal = 0m;
+                    foreach (OrderItem item in items)
+                    {
+                        subtotal = subtotal + (item.Price * item.Quantity);
+                    }
+
+                    decimal discount = order.DiscountAmount;
+                    if (discount < 0m || discount > subtotal) throw new InvalidOperationException("Invalid discount amount.");
+
+                    decimal tax = Math.Round((subtotal - discount) * taxRatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                    decimal total = subtotal - discount + tax;
+
+                    if (order.AmountPaid < total) throw new InvalidOperationException("Amount paid is less than the total.");
+
+                    DateTime now = DateTime.Now;
+                    int orderId = InsertOrder(connection, order, now, subtotal, tax, discount, total);
+
+                    string digits = "000000" + orderId.ToString(CultureInfo.InvariantCulture);
+                    string orderNumber = "ORD-" + now.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + "-" + digits.Substring(digits.Length - 6);
+
+                    SetOrderNumber(connection, orderId, orderNumber);
+                    InsertDetails(connection, orderId, items);
+                    TakeStock(connection, items, orderNumber, order.UserId);
+
+                    SqliteDb.Commit(connection);
+                    return orderId;
+                }
+                catch
+                {
+                    SqliteDb.Rollback(connection);
+                    throw;
+                }
+            }
+        }
+
+        public Order GetById(int orderId)
+        {
+            Order order = null;
+
+            string headerSql =
+                "SELECT OrderId, OrderNumber, CustomerId, UserId, OrderDate, Subtotal, TaxAmount, DiscountAmount, " +
+                "       Total, PaymentMethod, AmountPaid, ChangeDue, Status " +
+                "FROM Orders WHERE OrderId = @orderId";
+
+            string linesSql =
+                "SELECT d.ProductId, p.Sku, p.Name AS ProductName, d.Quantity, d.UnitPrice, d.LineTotal " +
+                "FROM OrderDetails d " +
+                "JOIN Products p ON p.ProductId = d.ProductId " +
+                "WHERE d.OrderId = @orderId " +
+                "ORDER BY d.OrderDetailId";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            {
+                using (SQLiteCommand command = new SQLiteCommand(headerSql, connection))
+                {
+                    command.Parameters.AddWithValue("@orderId", orderId);
+
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        if (!reader.Read()) return null;
+
+                        order = new Order();
+                        order.Id = ReaderHelper.GetInt(reader, "OrderId");
+                        order.OrderNumber = ReaderHelper.GetString(reader, "OrderNumber");
+                        order.CustomerId = ReaderHelper.GetNullableInt(reader, "CustomerId");
+                        order.UserId = ReaderHelper.GetInt(reader, "UserId");
+                        order.OrderDate = ReaderHelper.GetDateTime(reader, "OrderDate");
+                        order.Subtotal = ReaderHelper.GetDecimal(reader, "Subtotal");
+                        order.TaxAmount = ReaderHelper.GetDecimal(reader, "TaxAmount");
+                        order.DiscountAmount = ReaderHelper.GetDecimal(reader, "DiscountAmount");
+                        order.Total = ReaderHelper.GetDecimal(reader, "Total");
+                        order.PaymentMethod = ReaderHelper.GetString(reader, "PaymentMethod");
+                        order.AmountPaid = ReaderHelper.GetDecimal(reader, "AmountPaid");
+                        order.ChangeDue = ReaderHelper.GetDecimal(reader, "ChangeDue");
+                        order.Status = ReaderHelper.GetString(reader, "Status");
+                    }
+                }
+
+                using (SQLiteCommand command = new SQLiteCommand(linesSql, connection))
+                {
+                    command.Parameters.AddWithValue("@orderId", orderId);
+
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            CartLine line = new CartLine();
+                            line.ProductId = ReaderHelper.GetInt(reader, "ProductId");
+                            line.Sku = ReaderHelper.GetString(reader, "Sku");
+                            line.ProductName = ReaderHelper.GetString(reader, "ProductName");
+                            line.Quantity = ReaderHelper.GetInt(reader, "Quantity");
+                            line.UnitPrice = ReaderHelper.GetDecimal(reader, "UnitPrice");
+                            order.Lines.Add(line);
+                        }
+                    }
+                }
+            }
+
+            return order;
+        }
+
+        private static List<OrderItem> LoadItems(SQLiteConnection connection, SortedDictionary<int, int> wanted)
+        {
+            List<OrderItem> items = new List<OrderItem>();
+
+            string sql = "SELECT Name, Price, StockQty, IsActive FROM Products WHERE ProductId = @productId";
+
+            foreach (KeyValuePair<int, int> pair in wanted)
+            {
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("@productId", pair.Key);
+
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        if (!reader.Read()) throw new InvalidOperationException("One or more products are unavailable.");
+                        if (!ReaderHelper.GetBool(reader, "IsActive")) throw new InvalidOperationException("One or more products are unavailable.");
+
+                        OrderItem item = new OrderItem();
+                        item.ProductId = pair.Key;
+                        item.Name = ReaderHelper.GetString(reader, "Name");
+                        item.Price = ReaderHelper.GetDecimal(reader, "Price");
+                        item.Stock = ReaderHelper.GetInt(reader, "StockQty");
+                        item.Quantity = pair.Value;
+                        items.Add(item);
+                    }
+                }
+            }
+
+            return items;
+        }
+
+        private static int InsertOrder(SQLiteConnection connection, Order order, DateTime now, decimal subtotal, decimal tax, decimal discount, decimal total)
+        {
+            string sql =
+                "INSERT INTO Orders (OrderNumber, CustomerId, UserId, OrderDate, Subtotal, TaxAmount, DiscountAmount, Total, " +
+                "                    PaymentMethod, AmountPaid, ChangeDue, Status) " +
+                "VALUES (@orderNumber, @customerId, @userId, @orderDate, @subtotal, @tax, @discount, @total, " +
+                "        @paymentMethod, @amountPaid, @changeDue, 'Completed')";
+
+            string temporaryNumber = Guid.NewGuid().ToString("N").Substring(0, 30);
+
+            object customerId = DBNull.Value;
+            if (order.CustomerId.HasValue) customerId = order.CustomerId.Value;
+
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            {
+                command.Parameters.AddWithValue("@orderNumber", temporaryNumber);
+                command.Parameters.AddWithValue("@customerId", customerId);
+                command.Parameters.AddWithValue("@userId", order.UserId);
+                command.Parameters.AddWithValue("@orderDate", now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+                command.Parameters.AddWithValue("@subtotal", subtotal);
+                command.Parameters.AddWithValue("@tax", tax);
+                command.Parameters.AddWithValue("@discount", discount);
+                command.Parameters.AddWithValue("@total", total);
+                command.Parameters.AddWithValue("@paymentMethod", order.PaymentMethod);
+                command.Parameters.AddWithValue("@amountPaid", order.AmountPaid);
+                command.Parameters.AddWithValue("@changeDue", order.AmountPaid - total);
+                command.ExecuteNonQuery();
+            }
+
+            return (int)connection.LastInsertRowId;
+        }
+
+        private static void SetOrderNumber(SQLiteConnection connection, int orderId, string orderNumber)
+        {
+            string sql = "UPDATE Orders SET OrderNumber = @orderNumber WHERE OrderId = @orderId";
+
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            {
+                command.Parameters.AddWithValue("@orderNumber", orderNumber);
+                command.Parameters.AddWithValue("@orderId", orderId);
+                command.ExecuteNonQuery();
+            }
+        }
+
+        private static void InsertDetails(SQLiteConnection connection, int orderId, List<OrderItem> items)
+        {
+            string sql =
+                "INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, LineTotal) " +
+                "VALUES (@orderId, @productId, @quantity, @unitPrice, @lineTotal)";
+
+            foreach (OrderItem item in items)
+            {
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("@orderId", orderId);
+                    command.Parameters.AddWithValue("@productId", item.ProductId);
+                    command.Parameters.AddWithValue("@quantity", item.Quantity);
+                    command.Parameters.AddWithValue("@unitPrice", item.Price);
+                    command.Parameters.AddWithValue("@lineTotal", item.Price * item.Quantity);
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private static void TakeStock(SQLiteConnection connection, List<OrderItem> items, string orderNumber, int userId)
+        {
+            string sql =
+                "UPDATE Products SET StockQty = StockQty - @quantity, UpdatedAt = datetime('now', 'localtime') " +
+                "WHERE ProductId = @productId";
+
+            foreach (OrderItem item in items)
+            {
+                using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("@quantity", item.Quantity);
+                    command.Parameters.AddWithValue("@productId", item.ProductId);
+                    command.ExecuteNonQuery();
+                }
+
+                ProductRepository.AddLog(connection, item.ProductId, -item.Quantity, "Sale " + orderNumber, userId);
+            }
+        }
+    }
+
+    public sealed class ReportRepository
+    {
+        public List<DailySales> GetDailySales(DateTime start, DateTime end)
+        {
+            List<DailySales> list = new List<DailySales>();
+
+            string sql =
+                "SELECT date(OrderDate) AS SaleDate, COUNT(*) AS OrderCount, SUM(Total) AS Revenue " +
+                "FROM Orders " +
+                "WHERE Status = 'Completed' AND OrderDate >= @startText AND OrderDate < @endText " +
+                "GROUP BY date(OrderDate) " +
+                "ORDER BY SaleDate";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = RangeCommand(connection, sql, start, end))
+            using (SQLiteDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    DailySales day = new DailySales();
+                    day.SaleDate = DateTime.ParseExact(ReaderHelper.GetString(reader, "SaleDate"), "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    day.OrderCount = ReaderHelper.GetInt(reader, "OrderCount");
+                    day.Revenue = ReaderHelper.GetMoney(reader, "Revenue");
+                    list.Add(day);
+                }
+            }
+
+            return list;
+        }
+
+        public List<TopProduct> GetTopProducts(DateTime start, DateTime end, int top)
+        {
+            List<TopProduct> list = new List<TopProduct>();
+
+            string sql =
+                "SELECT p.Name AS ProductName, SUM(d.Quantity) AS QtySold, SUM(d.LineTotal) AS Revenue " +
+                "FROM OrderDetails d " +
+                "JOIN Orders o ON o.OrderId = d.OrderId " +
+                "JOIN Products p ON p.ProductId = d.ProductId " +
+                "WHERE o.Status = 'Completed' AND o.OrderDate >= @startText AND o.OrderDate < @endText " +
+                "GROUP BY p.Name " +
+                "ORDER BY SUM(d.LineTotal) DESC, p.Name " +
+                "LIMIT @top";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = RangeCommand(connection, sql, start, end))
+            {
+                command.Parameters.AddWithValue("@top", top);
+
+                using (SQLiteDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        TopProduct product = new TopProduct();
+                        product.ProductName = ReaderHelper.GetString(reader, "ProductName");
+                        product.QtySold = ReaderHelper.GetInt(reader, "QtySold");
+                        product.Revenue = ReaderHelper.GetMoney(reader, "Revenue");
+                        list.Add(product);
+                    }
+                }
+            }
+
+            return list;
+        }
+
+        public List<CategorySales> GetSalesByCategory(DateTime start, DateTime end)
+        {
+            List<CategorySales> list = new List<CategorySales>();
+
+            string sql =
+                "SELECT c.Name AS CategoryName, SUM(d.LineTotal) AS Revenue " +
+                "FROM OrderDetails d " +
+                "JOIN Orders o ON o.OrderId = d.OrderId " +
+                "JOIN Products p ON p.ProductId = d.ProductId " +
+                "JOIN Categories c ON c.CategoryId = p.CategoryId " +
+                "WHERE o.Status = 'Completed' AND o.OrderDate >= @startText AND o.OrderDate < @endText " +
+                "GROUP BY c.Name " +
+                "ORDER BY SUM(d.LineTotal) DESC, c.Name";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = RangeCommand(connection, sql, start, end))
+            using (SQLiteDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    CategorySales category = new CategorySales();
+                    category.CategoryName = ReaderHelper.GetString(reader, "CategoryName");
+                    category.Revenue = ReaderHelper.GetMoney(reader, "Revenue");
+                    list.Add(category);
+                }
+            }
+
+            return list;
+        }
+
+        public List<LowStockItem> GetLowStock()
+        {
+            List<LowStockItem> list = new List<LowStockItem>();
+
+            string sql =
+                "SELECT ProductId, Sku, Name, StockQty, ReorderLevel " +
+                "FROM Products " +
+                "WHERE IsActive = 1 AND StockQty <= ReorderLevel " +
+                "ORDER BY StockQty, Name COLLATE NOCASE";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            using (SQLiteDataReader reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    LowStockItem item = new LowStockItem();
+                    item.ProductId = ReaderHelper.GetInt(reader, "ProductId");
+                    item.Sku = ReaderHelper.GetString(reader, "Sku");
+                    item.Name = ReaderHelper.GetString(reader, "Name");
+                    item.StockQty = ReaderHelper.GetInt(reader, "StockQty");
+                    item.ReorderLevel = ReaderHelper.GetInt(reader, "ReorderLevel");
+                    list.Add(item);
+                }
+            }
+
+            return list;
+        }
+
+        public DashboardStats GetDashboard()
+        {
+            string sql =
+                "SELECT " +
+                "  (SELECT COALESCE(SUM(Total), 0) FROM Orders WHERE Status = 'Completed' AND OrderDate >= @todayText) AS TodaySales, " +
+                "  (SELECT COUNT(*) FROM Orders WHERE Status = 'Completed' AND OrderDate >= @todayText) AS TodayOrders, " +
+                "  (SELECT COUNT(*) FROM Products WHERE IsActive = 1 AND StockQty <= ReorderLevel) AS LowStockCount, " +
+                "  (SELECT COUNT(*) FROM Products WHERE IsActive = 1) AS ActiveProducts";
+
+            using (SQLiteConnection connection = SqliteDb.Open())
+            using (SQLiteCommand command = new SQLiteCommand(sql, connection))
+            {
+                command.Parameters.AddWithValue("@todayText", DateText(DateTime.Today));
+
+                using (SQLiteDataReader reader = command.ExecuteReader())
+                {
+                    DashboardStats stats = new DashboardStats();
+                    if (!reader.Read()) return stats;
+
+                    stats.TodaySales = ReaderHelper.GetMoney(reader, "TodaySales");
+                    stats.TodayOrders = ReaderHelper.GetInt(reader, "TodayOrders");
+                    stats.LowStockCount = ReaderHelper.GetInt(reader, "LowStockCount");
+                    stats.ActiveProducts = ReaderHelper.GetInt(reader, "ActiveProducts");
+                    return stats;
+                }
+            }
+        }
+
+        private static SQLiteCommand RangeCommand(SQLiteConnection connection, string sql, DateTime start, DateTime end)
+        {
+            SQLiteCommand command = new SQLiteCommand(sql, connection);
+            command.Parameters.AddWithValue("@startText", DateText(start.Date));
+            command.Parameters.AddWithValue("@endText", DateText(end.Date.AddDays(1)));
+            return command;
+        }
+
+        private static string DateText(DateTime value)
+        {
+            return value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+    }
+
+    internal static class ReaderHelper
+    {
+        public static int GetInt(SQLiteDataReader reader, string column)
+        {
+            return Convert.ToInt32(reader[column]);
+        }
+
+        public static int? GetNullableInt(SQLiteDataReader reader, string column)
+        {
+            int position = reader.GetOrdinal(column);
+            if (reader.IsDBNull(position)) return null;
+            return Convert.ToInt32(reader[position]);
+        }
+
+        public static decimal GetDecimal(SQLiteDataReader reader, string column)
+        {
+            return Convert.ToDecimal(reader[column]);
+        }
+
+        public static decimal GetMoney(SQLiteDataReader reader, string column)
+        {
+            decimal value = Convert.ToDecimal(reader[column]);
+            return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        public static string GetString(SQLiteDataReader reader, string column)
+        {
+            int position = reader.GetOrdinal(column);
+            if (reader.IsDBNull(position)) return null;
+            return reader.GetString(position);
+        }
+
+        public static bool GetBool(SQLiteDataReader reader, string column)
+        {
+            return Convert.ToBoolean(reader[column]);
+        }
+
+        public static DateTime GetDateTime(SQLiteDataReader reader, string column)
+        {
+            int position = reader.GetOrdinal(column);
+            return reader.GetDateTime(position);
+        }
+
+        public static byte[] GetBytes(SQLiteDataReader reader, string column)
+        {
+            int position = reader.GetOrdinal(column);
+            if (reader.IsDBNull(position)) return null;
+            return (byte[])reader[position];
         }
     }
 }

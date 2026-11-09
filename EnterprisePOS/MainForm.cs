@@ -1,5 +1,4 @@
 using System;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -10,7 +9,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Navigation, role-aware menus, and the day's numbers for admins and managers.
     public sealed class MainForm : Form
     {
         private const string DefaultDash = "-";
@@ -31,10 +29,6 @@ namespace EnterprisePOS
             WindowState = FormWindowState.Maximized;
             AutoScaleMode = AutoScaleMode.Font;
 
-            // Roles from the teacher's script:
-            //   Admin   = everything, including user management
-            //   Manager = POS, products, inventory and analytics
-            //   Cashier = point of sale only
             canManage = user.Role == UserRole.Admin || user.Role == UserRole.Manager;
 
             var menu = new MenuStrip();
@@ -75,7 +69,6 @@ namespace EnterprisePOS
                 ForeColor = Color.DarkSlateBlue
             };
 
-            // Row 1: the day's numbers (admin and manager only)
             var tiles = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -88,7 +81,6 @@ namespace EnterprisePOS
             tiles.Controls.Add(MakeTile("Low stock items", lblLowStock));
             tiles.Controls.Add(MakeTile("Active products", lblProducts));
 
-            // Row 2: shortcuts to the same screens as the menu
             var shortcuts = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -115,12 +107,10 @@ namespace EnterprisePOS
             }
             body.Controls.Add(shortcuts, 0, 2);
 
-            // The Fill control goes in first, the menu last, so the menu docks at the top.
             Controls.Add(body);
             Controls.Add(menu);
             MainMenuStrip = menu;
 
-            // Database calls wait for the Load event, not the constructor.
             Load += MainForm_Load;
         }
 
@@ -141,11 +131,9 @@ namespace EnterprisePOS
 
         private void SimulateErrorMenuItem_Click(object sender, EventArgs e)
         {
-            // Goes through the same path as a real unexpected error: logged, safe message, program keeps running.
             throw new InvalidOperationException("Test error from the Administration menu.");
         }
 
-        // Opens a screen as a dialog, then updates the numbers, since a sale or stock change may have happened.
         private void ShowChild(Form form)
         {
             using (form)
@@ -155,21 +143,18 @@ namespace EnterprisePOS
             RefreshDashboard();
         }
 
-        // Admin only: proves the program can reach the database, and says which one it reached.
         private static void CheckConnection()
         {
             try
             {
-                using (SqlConnection connection = Db.Open())
-                {
-                    MessageBox.Show(
-                        "Connected to database \"" + connection.Database + "\" on " + connection.DataSource + ".",
-                        "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                MessageBox.Show(SqliteDb.Describe(), "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                string reference = AppLog.Error("Database check failed", ex);
+                MessageBox.Show(
+                    ex.Message + Environment.NewLine + Environment.NewLine + "Reference: " + reference,
+                    "Database connection", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -211,7 +196,6 @@ namespace EnterprisePOS
             }
             catch
             {
-                // The numbers are a convenience. If they cannot load, show dashes and let the rest work.
                 lblSales.Text = DefaultDash;
                 lblOrders.Text = DefaultDash;
                 lblLowStock.Text = DefaultDash;
@@ -250,7 +234,6 @@ namespace EnterprisePOS
             };
             value.Dock = DockStyle.Fill;
 
-            // The last control added docks first, so the caption takes the top and the value fills the rest.
             tile.Controls.Add(value);
             tile.Controls.Add(label);
             return tile;
@@ -263,4 +246,4 @@ namespace EnterprisePOS
             return button;
         }
     }
-}
+}   

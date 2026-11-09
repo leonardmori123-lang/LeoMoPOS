@@ -6,7 +6,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Admin sets a new password for one user. The old password is not asked for.
     public sealed class ResetPasswordForm : Form
     {
         private const string FormTitle = "Reset Password";
@@ -19,7 +18,6 @@ namespace EnterprisePOS
         private Button cancelButton;
         private Button saveButton;
 
-        // Creates the reset password form for the given user.
         public ResetPasswordForm(User actor, User targetUser)
         {
             this.currentUser = actor;
@@ -30,7 +28,6 @@ namespace EnterprisePOS
             BuildLayout();
         }
 
-        // Sets the basic window properties.
         private void InitializeFormProperties()
         {
             Text = FormTitle;
@@ -43,7 +40,6 @@ namespace EnterprisePOS
             AutoScaleMode = AutoScaleMode.Font;
         }
 
-        // Creates the password text boxes.
         private void InitializeInputControls()
         {
             passwordTextBox = new TextBox();
@@ -55,7 +51,6 @@ namespace EnterprisePOS
             confirmTextBox.UseSystemPasswordChar = true;
         }
 
-        // Builds the table layout and adds all child controls.
         private void BuildLayout()
         {
             TableLayoutPanel table = new TableLayoutPanel();
@@ -103,7 +98,6 @@ namespace EnterprisePOS
             Controls.Add(table);
         }
 
-        // Validates input and saves the new password.
         private void SaveButton_Click(object sender, EventArgs e)
         {
             try
@@ -131,7 +125,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Adds a labeled control row to the table layout.
         private static void AddRow(TableLayoutPanel table, string labelText, Control control, int row)
         {
             Label label = new Label();

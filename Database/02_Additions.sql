@@ -1,13 +1,9 @@
-/* 02_Additions.sql
-   Extra procedures for the screens. The teacher's 01 script stays untouched.
-   Safe to run more than once (CREATE OR ALTER). */
 USE PosDB;
 GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
 
-/* All categories, for the product editor's drop-down */
 CREATE OR ALTER PROCEDURE dbo.usp_Category_List
 AS
 BEGIN
@@ -18,7 +14,6 @@ BEGIN
 END
 GO
 
-/* Product list and search by SKU, barcode or name. The picture column is left out to keep the list light. */
 CREATE OR ALTER PROCEDURE dbo.usp_Product_Search
     @Search NVARCHAR(200) = NULL,
     @IncludeInactive BIT = 0
@@ -38,7 +33,6 @@ BEGIN
 END
 GO
 
-/* One product with its picture, for the editor */
 CREATE OR ALTER PROCEDURE dbo.usp_Product_GetById
     @ProductId INT
 AS

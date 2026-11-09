@@ -1,13 +1,9 @@
-/* 04_Additions.sql
-   User administration: list, create, update (name, role, active) and reset password.
-   The teacher's 01 script stays untouched. Safe to run more than once. */
 USE PosDB;
 GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
 
-/* Every user, active or not. PasswordHash and Salt are never returned. */
 CREATE OR ALTER PROCEDURE dbo.usp_User_List
 AS
 BEGIN
@@ -19,8 +15,6 @@ BEGIN
 END
 GO
 
-/* The app hashes the password (SHA-256 of Salt + Password) and sends only the hash and the salt.
-   A duplicate username raises error 2627 from the UNIQUE constraint; the app turns it into a clear message. */
 CREATE OR ALTER PROCEDURE dbo.usp_User_Create
     @Username     NVARCHAR(50),
     @PasswordHash VARCHAR(64),
@@ -38,8 +32,6 @@ BEGIN
 END
 GO
 
-/* Changes the name, role and active flag. The username and password are not touched here.
-   Rule: at least one active Admin (RoleId 1) must always remain. */
 CREATE OR ALTER PROCEDURE dbo.usp_User_Update
     @UserId   INT,
     @FullName NVARCHAR(100),
@@ -68,7 +60,6 @@ BEGIN
 END
 GO
 
-/* Sets a new password (hash and salt computed by the app). */
 CREATE OR ALTER PROCEDURE dbo.usp_User_ResetPassword
     @UserId       INT,
     @PasswordHash VARCHAR(64),

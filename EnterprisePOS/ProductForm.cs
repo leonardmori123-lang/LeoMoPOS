@@ -8,7 +8,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Product list with search, add, edit, stock adjustment and deactivate.
     public sealed class ProductForm : Form
     {
         private readonly User currentUser;
@@ -84,7 +83,6 @@ namespace EnterprisePOS
 
             grid.DataBindingComplete += Grid_DataBindingComplete;
 
-            // Fill control first, then the bottom bar, then the top bar.
             Controls.Add(grid);
             Controls.Add(lblSummary);
             Controls.Add(commands);
@@ -253,7 +251,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Number format, narrow Id column, red shading for low stock, grey text for inactive products
         private void StyleGrid()
         {
             if (!grid.Columns.Contains("Price"))

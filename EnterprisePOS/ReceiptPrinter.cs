@@ -7,7 +7,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Draws the receipt for an 80 mm roll. Preview shows it on screen, Print sends it to a printer.
     public sealed class ReceiptPrinter : IReceiptPrinter
     {
         private readonly PrintDocument document = new PrintDocument();
@@ -18,7 +17,6 @@ namespace EnterprisePOS
         public ReceiptPrinter()
         {
             document.DocumentName = "Enterprise POS Receipt";
-            // PaperSize is in hundredths of an inch: 315 is about 80 mm wide.
             document.DefaultPageSettings.PaperSize = new PaperSize("Receipt", 315, 900);
             document.DefaultPageSettings.Margins = new Margins(12, 12, 12, 12);
             document.PrintPage += PrintPage;
@@ -66,7 +64,6 @@ namespace EnterprisePOS
 
             foreach (var line in current.Lines)
             {
-                // A long name is cut so it never runs into the amount.
                 var name = line.ProductName ?? string.Empty;
                 if (name.Length > 23) name = name.Substring(0, 23);
                 DrawText(g, string.Format("{0,-23} {1,3} {2,10:C2}", name, line.Quantity, line.Amount), normal, ref y, x);

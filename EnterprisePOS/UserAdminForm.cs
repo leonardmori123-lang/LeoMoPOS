@@ -7,7 +7,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Admin only: the list of users with add and edit.
     public sealed class UserAdminForm : Form
     {
         private const string FormTitle = "User & Role Management";
@@ -24,7 +23,6 @@ namespace EnterprisePOS
         private Button editButton;
         private Button resetPasswordButton;
 
-        // Creates the user administration form.
         public UserAdminForm(User user)
         {
             this.currentUser = user;
@@ -36,7 +34,6 @@ namespace EnterprisePOS
             AttachEvents();
         }
 
-        // Sets the basic window properties.
         private void InitializeFormProperties()
         {
             Text = FormTitle;
@@ -46,7 +43,6 @@ namespace EnterprisePOS
             AutoScaleMode = AutoScaleMode.Font;
         }
 
-        // Creates the controls used on this form.
         private void InitializeControls()
         {
             summaryLabel = new Label();
@@ -85,7 +81,6 @@ namespace EnterprisePOS
             resetPasswordButton.AutoSize = true;
         }
 
-        // Sets up the table columns for the users grid.
         private void BuildColumns()
         {
             DataGridViewTextBoxColumn idColumn = new DataGridViewTextBoxColumn();
@@ -132,20 +127,17 @@ namespace EnterprisePOS
             userGrid.Columns.Add(lastLoginColumn);
         }
 
-        // Adds the controls to the form in docking order.
         private void BuildLayout()
         {
             commandPanel.Controls.Add(addButton);
             commandPanel.Controls.Add(editButton);
             commandPanel.Controls.Add(resetPasswordButton);
 
-            // Fill control first, then the bottom bar, then the top bar.
             Controls.Add(userGrid);
             Controls.Add(summaryLabel);
             Controls.Add(commandPanel);
         }
 
-        // Hooks up event handlers in one place.
         private void AttachEvents()
         {
             addButton.Click += AddButton_Click;
@@ -156,31 +148,26 @@ namespace EnterprisePOS
             Load += UserAdminForm_Load;
         }
 
-        // Loads user data when the form opens.
         private void UserAdminForm_Load(object sender, EventArgs e)
         {
             LoadRows();
         }
 
-        // Handles the click on the Add User button.
         private void AddButton_Click(object sender, EventArgs e)
         {
             AddUser();
         }
 
-        // Handles the click on the Edit button.
         private void EditButton_Click(object sender, EventArgs e)
         {
             EditSelected();
         }
 
-        // Handles the click on the Reset Password button.
         private void ResetPasswordButton_Click(object sender, EventArgs e)
         {
             ResetSelected();
         }
 
-        // Opens the editor when a row is double-clicked.
         private void UserGrid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex >= 0)
@@ -189,13 +176,11 @@ namespace EnterprisePOS
             }
         }
 
-        // Applies row styling after data binding completes.
         private void UserGrid_DataBindingComplete(object sender, DataGridViewBindingCompleteEventArgs e)
         {
             StyleRows();
         }
 
-        // Fetches users from the service and populates the grid.
         private void LoadRows()
         {
             try
@@ -231,7 +216,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Opens the editor dialog to create a new user.
         private void AddUser()
         {
             using (UserEditorForm editor = new UserEditorForm(currentUser))
@@ -243,7 +227,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Opens the editor dialog for the currently selected user.
         private void EditSelected()
         {
             if (userGrid.CurrentRow == null)
@@ -268,7 +251,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Opens the password reset dialog for the currently selected user.
         private void ResetSelected()
         {
             if (userGrid.CurrentRow == null)
@@ -290,7 +272,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Finds a user in the loaded list by user ID.
         private User FindLoadedUserById(int userId)
         {
             foreach (User user in loadedUsers)
@@ -303,7 +284,6 @@ namespace EnterprisePOS
             return null;
         }
 
-        // Grey text for inactive users
         private void StyleRows()
         {
             foreach (DataGridViewRow row in userGrid.Rows)
@@ -320,7 +300,6 @@ namespace EnterprisePOS
             }
         }
 
-        // View model used to bind user list data to the grid.
         private sealed class UserRowViewModel
         {
             public int Id { get; set; }

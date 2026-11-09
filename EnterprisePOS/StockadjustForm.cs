@@ -7,7 +7,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Adds or removes stock for one product and records the reason.
     public sealed class StockAdjustForm : Form
     {
         private const string FormTitle = "Adjust Stock";
@@ -23,7 +22,6 @@ namespace EnterprisePOS
         private Button applyButton;
         private Button cancelButton;
 
-        // Creates the stock adjust form for a product.
         public StockAdjustForm(User user, int productId, string productName, int currentStock)
         {
             this.currentUser = user;
@@ -40,7 +38,6 @@ namespace EnterprisePOS
             UpdatePreview();
         }
 
-        // Sets the basic window properties.
         private void InitializeFormProperties()
         {
             Text = FormTitle;
@@ -53,7 +50,6 @@ namespace EnterprisePOS
             AutoScaleMode = AutoScaleMode.Font;
         }
 
-        // Creates the controls used on this form.
         private void InitializeControls()
         {
             changeTextBox = new TextBox();
@@ -76,7 +72,6 @@ namespace EnterprisePOS
             cancelButton.DialogResult = DialogResult.Cancel;
         }
 
-        // Suggestions only; any reason can be typed.
         private void PopulateReasonSuggestions()
         {
             reasonComboBox.Items.AddRange(new object[]
@@ -89,7 +84,6 @@ namespace EnterprisePOS
             });
         }
 
-        // Builds the table and button layout.
         private void BuildLayout(string productName)
         {
             TableLayoutPanel table = new TableLayoutPanel();
@@ -136,14 +130,12 @@ namespace EnterprisePOS
             Controls.Add(table);
         }
 
-        // Hooks up all event handlers in one place.
         private void AttachEvents()
         {
             applyButton.Click += ApplyButton_Click;
             changeTextBox.TextChanged += ChangeTextBox_TextChanged;
         }
 
-        // Handles the click on the apply button to validate and save changes.
         private void ApplyButton_Click(object sender, EventArgs e)
         {
             try
@@ -166,13 +158,11 @@ namespace EnterprisePOS
             }
         }
 
-        // Updates the stock preview whenever the text changes.
         private void ChangeTextBox_TextChanged(object sender, EventArgs e)
         {
             UpdatePreview();
         }
 
-        // Shows what the stock will be, in red if it would go below zero
         private void UpdatePreview()
         {
             int change;
@@ -196,7 +186,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Adds a labeled control row to the table layout.
         private static void AddRow(TableLayoutPanel table, string labelText, Control control, int row)
         {
             Label label = new Label();

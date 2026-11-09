@@ -6,8 +6,6 @@ using EnterprisePOS.Services;
 
 namespace EnterprisePOS
 {
-    // Add a user (existing is null) or edit one. In edit mode the username stays fixed and the
-    // password is left alone.
     public sealed class UserEditorForm : Form
     {
         private const string AddUserTitle = "Add User";
@@ -26,7 +24,6 @@ namespace EnterprisePOS
         private Button cancelButton;
         private Button saveButton;
 
-        // Creates a new editor form for adding or editing a user account.
         public UserEditorForm(User actor, User existingUser = null)
         {
             this.currentUser = actor;
@@ -42,7 +39,6 @@ namespace EnterprisePOS
             AttachEvents();
         }
 
-        // Sets the basic window properties.
         private void InitializeFormProperties(bool isNew)
         {
             if (isNew)
@@ -64,7 +60,6 @@ namespace EnterprisePOS
             AutoScaleMode = AutoScaleMode.Font;
         }
 
-        // Creates the input controls.
         private void InitializeControls()
         {
             usernameTextBox = new TextBox();
@@ -99,7 +94,6 @@ namespace EnterprisePOS
             saveButton.Text = "Save";
         }
 
-        // Arranges controls in a table layout.
         private void BuildLayout(bool isNew, bool editingSelf)
         {
             TableLayoutPanel table = new TableLayoutPanel();
@@ -155,7 +149,6 @@ namespace EnterprisePOS
             Controls.Add(table);
         }
 
-        // Loads initial values into controls depending on whether creating or editing.
         private void PopulateInitialValues(bool isNew, bool editingSelf)
         {
             if (isNew)
@@ -178,13 +171,11 @@ namespace EnterprisePOS
             }
         }
 
-        // Hooks up event handlers.
         private void AttachEvents()
         {
             saveButton.Click += SaveButton_Click;
         }
 
-        // Validates inputs and creates or updates the user account.
         private void SaveButton_Click(object sender, EventArgs e)
         {
             try
@@ -229,7 +220,6 @@ namespace EnterprisePOS
             }
         }
 
-        // Adds a labeled control row to the table layout.
         private static void AddRow(TableLayoutPanel table, string labelText, Control control, int row)
         {
             Label label = new Label();

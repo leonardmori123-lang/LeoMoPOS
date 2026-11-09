@@ -3,10 +3,8 @@ using System.Collections.Generic;
 
 namespace EnterprisePOS.Domain
 {
-    // Matches Roles.RoleId in PosDB: 1 = Admin, 2 = Manager, 3 = Cashier
     public enum UserRole { Admin = 1, Manager = 2, Cashier = 3 }
 
-    // Matches the CHECK constraint on Orders.PaymentMethod
     public static class PaymentMethods
     {
         public const string Cash = "Cash";
@@ -15,7 +13,6 @@ namespace EnterprisePOS.Domain
         public static readonly string[] All = { Cash, Card, Mobile };
     }
 
-    // Table: Users (PasswordHash and Salt stay in the Data layer, not here)
     public sealed class User
     {
         public int Id { get; set; }
@@ -26,7 +23,6 @@ namespace EnterprisePOS.Domain
         public DateTime? LastLoginAt { get; set; }
     }
 
-    // Table: Categories
     public sealed class Category
     {
         public int Id { get; set; }
@@ -34,7 +30,6 @@ namespace EnterprisePOS.Domain
         public string Description { get; set; }
     }
 
-    // Table: Products
     public sealed class Product
     {
         public int Id { get; set; }
@@ -42,18 +37,17 @@ namespace EnterprisePOS.Domain
         public string Barcode { get; set; }
         public string Name { get; set; }
         public int CategoryId { get; set; }
-        public string CategoryName { get; set; }   // filled when a query joins Categories
-        public decimal Price { get; set; }         // selling price
+        public string CategoryName { get; set; }
+        public decimal Price { get; set; }
         public decimal Cost { get; set; }
         public int StockQty { get; set; }
         public int ReorderLevel { get; set; }
-        public byte[] Image { get; set; }          // VARBINARY(MAX), null when no picture
+        public byte[] Image { get; set; }
         public bool IsActive { get; set; }
 
         public bool IsLowStock { get { return StockQty <= ReorderLevel; } }
     }
 
-    // Table: Customers
     public sealed class Customer
     {
         public int Id { get; set; }
@@ -63,7 +57,6 @@ namespace EnterprisePOS.Domain
         public string Address { get; set; }
     }
 
-    // One line in the shopping cart. Also used for rows in OrderDetails.
     public sealed class CartLine
     {
         public int ProductId { get; set; }
@@ -74,7 +67,6 @@ namespace EnterprisePOS.Domain
         public decimal LineTotal { get { return Quantity * UnitPrice; } }
     }
 
-    // Table: Orders (+ its OrderDetails lines)
     public sealed class Order
     {
         public int Id { get; set; }
@@ -89,11 +81,9 @@ namespace EnterprisePOS.Domain
         public string PaymentMethod { get; set; }
         public decimal AmountPaid { get; set; }
         public decimal ChangeDue { get; set; }
-        public string Status { get; set; }         // "Completed" or "Voided"
+        public string Status { get; set; }
         public List<CartLine> Lines { get; set; } = new List<CartLine>();
     }
-
-    // ---- Receipt model: what gets printed, so the printer does not depend on the database entity ----
 
     public sealed class ReceiptLine
     {
@@ -120,9 +110,6 @@ namespace EnterprisePOS.Domain
         public decimal Change { get; set; }
     }
 
-    // ---- Report rows, one class per report stored procedure ----
-
-    // usp_Report_DailySales
     public sealed class DailySales
     {
         public DateTime SaleDate { get; set; }
@@ -130,7 +117,6 @@ namespace EnterprisePOS.Domain
         public decimal Revenue { get; set; }
     }
 
-    // usp_Report_TopProducts
     public sealed class TopProduct
     {
         public string ProductName { get; set; }
@@ -138,14 +124,12 @@ namespace EnterprisePOS.Domain
         public decimal Revenue { get; set; }
     }
 
-    // usp_Report_SalesByCategory
     public sealed class CategorySales
     {
         public string CategoryName { get; set; }
         public decimal Revenue { get; set; }
     }
 
-    // usp_Report_LowStock
     public sealed class LowStockItem
     {
         public int ProductId { get; set; }
@@ -155,7 +139,6 @@ namespace EnterprisePOS.Domain
         public int ReorderLevel { get; set; }
     }
 
-    // usp_Report_Dashboard
     public sealed class DashboardStats
     {
         public decimal TodaySales { get; set; }
