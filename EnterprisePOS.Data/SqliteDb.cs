@@ -39,6 +39,7 @@ namespace EnterprisePOS.Data
         {
             try
             {
+                NativeLibraries.LoadOnce();
                 EnsureCreated();
 
                 SQLiteConnection connection = new SQLiteConnection(ConnectionString);
@@ -69,6 +70,7 @@ namespace EnterprisePOS.Data
 
         public static void EnsureCreated()
         {
+            NativeLibraries.LoadOnce();
             lock (createLock)
             {
                 if (checkedThisRun && File.Exists(DatabasePath)) return;
