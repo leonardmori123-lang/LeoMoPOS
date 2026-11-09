@@ -63,6 +63,8 @@ To build from source:
 - .NET Framework 4.8 Developer Pack
 - Internet access on the first build, so Visual Studio can restore the NuGet packages (`System.Data.SQLite.Core`, `Costura.Fody`)
 
+After a fresh clone, the first build restores the NuGet packages, but Costura.Fody does not merge the DLLs in that same session. Build once, close and reopen the solution, then rebuild. `EnterprisePOS.exe` in `bin\Release` should then be about 2 MB. An exe of about 59 KB means the merge did not happen.
+
 ## Project layout
 
 ```text
