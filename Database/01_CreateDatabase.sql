@@ -1,8 +1,8 @@
 USE master;
 GO
-IF DB_ID(N'PosDB') IS NULL CREATE DATABASE PosDB;
+IF DB_ID(N'mori') IS NULL CREATE DATABASE mori;
 GO
-USE PosDB;
+USE mori;
 GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -117,7 +117,7 @@ CREATE INDEX IX_OrderDetails_OrderId ON dbo.OrderDetails(OrderId);
 CREATE INDEX IX_OrderDetails_ProductId ON dbo.OrderDetails(ProductId) INCLUDE (Quantity, LineTotal);
 CREATE INDEX IX_InventoryLog_Product ON dbo.InventoryLog(ProductId, CreatedAt DESC);
 GO
-USE PosDB;
+USE mori;
 GO
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -319,7 +319,7 @@ BEGIN
  (SELECT COUNT(*) FROM dbo.Products WHERE IsActive = 1) AS ActiveProducts;
 END
 GO
-USE PosDB;
+USE mori;
 GO
 SET QUOTED_IDENTIFIER ON;
 GO

@@ -1,16 +1,16 @@
-# EnterprisePOS
+# LeoMoPOS
 
 Enterprise POS & Inventory Management System. A Windows desktop point-of-sale and stock program written in C# (Windows Forms, .NET Framework 4.8). It was built as a class project, following a step-by-step tutorial, on the database design supplied by the instructor. The program carries its own SQLite database inside the exe, so it runs on a Windows PC with nothing else installed.
 
 ## Run the program (no setup)
 
-1. Open the **Releases** page of this repository and download `EnterprisePOS.exe`.
+1. Open the **Releases** page of this repository and download `LeoMoPOS.exe`.
 2. Double-click it. Nothing else has to be installed. Windows 10 and 11 already include .NET Framework 4.8.
 3. Sign in with a demo account from the table below, for example `admin` / `Admin@123`.
 
 Windows SmartScreen may warn about the exe, since the program is not code-signed. Choose **More info**, then **Run anyway**.
 
-The first start creates the database file `%LocalAppData%\EnterprisePOS\pos.db` and fills it with sample data: 3 users, 5 categories and 13 products. To start over with fresh sample data, close the program and delete `pos.db`. The next start builds it again.
+The first start creates the database file `%LocalAppData%\LeoMoPOS\mori.db` and fills it with sample data: 3 users, 5 categories and 13 products. To start over with fresh sample data, close the program and delete `mori.db`. The next start builds it again.
 
 ## What it does
 
@@ -20,7 +20,7 @@ The first start creates the database file `%LocalAppData%\EnterprisePOS\pos.db` 
 - **Receipts.** Preview or print an 80 mm receipt for the last completed order.
 - **Sales analytics** (Admin, Manager). Daily sales, top products, sales by category and current low stock for a date range, plus dashboard tiles on the main window.
 - **User administration** (Admin). Add and edit users, activate or deactivate them, reset passwords, see the last login.
-- **Error handling.** Unexpected errors are written to a log file, and the user sees a short message with a reference number. Logs are in `%LocalAppData%\EnterprisePOS\Logs`; files older than 30 days are deleted at start-up.
+- **Error handling.** Unexpected errors are written to a log file, and the user sees a short message with a reference number. Logs are in `%LocalAppData%\LeoMoPOS\Logs`; files older than 30 days are deleted at start-up.
 
 ## Roles
 
@@ -44,10 +44,10 @@ These are shared demo passwords. Change them (Administration > Users > Reset Pas
 
 ## The built-in database
 
-- The database is one SQLite file, `%LocalAppData%\EnterprisePOS\pos.db`. It is created on the first start from `EnterprisePOS.Data/PosDatabase.sql`, which is embedded in the program.
+- The database is one SQLite file, `%LocalAppData%\LeoMoPOS\mori.db`. It is created on the first start from `LeoMoPOS.Data/PosDatabase.sql`, which is embedded in the program.
 - `PosDatabase.sql` is the instructor's PosDB tables and sample data translated to SQLite. The stored procedures of the original became SQL statements in `Repositories.cs`, and their error messages are unchanged.
 - Every write runs in a `BEGIN IMMEDIATE` transaction. If a second copy of the program writes at the same moment, it waits up to 10 seconds and then sees the updated stock.
-- SQLite needs a native file, `SQLite.Interop.dll`. The x86 and x64 versions are embedded in the program (`EnterprisePOS.Data/Native`) and unpacked to `%LocalAppData%\EnterprisePOS\native` on the first start.
+- SQLite needs a native file, `SQLite.Interop.dll`. The x86 and x64 versions are embedded in the program (`LeoMoPOS.Data/Native`) and unpacked to `%LocalAppData%\LeoMoPOS\native` on the first start.
 - The data stays on the PC that runs the program. Copies on other PCs have their own databases.
 - The `Database` folder holds the instructor's original SQL Server scripts, kept as a reference. The database name in them is changed to `mori`, following the class naming rule. The program does not use them.
 
@@ -63,23 +63,23 @@ To build from source:
 - .NET Framework 4.8 Developer Pack
 - Internet access on the first build, so Visual Studio can restore the NuGet packages (`System.Data.SQLite.Core`, `Costura.Fody`)
 
-After a fresh clone, the first build restores the NuGet packages, but Costura.Fody does not merge the DLLs in that same session. Build once, close and reopen the solution, then rebuild. `EnterprisePOS.exe` in `bin\Release` should then be about 2 MB. An exe of about 59 KB means the merge did not happen.
+After a fresh clone, the first build restores the NuGet packages, but Costura.Fody does not merge the DLLs in that same session. Build once, close and reopen the solution, then rebuild. `LeoMoPOS.exe` in `bin\Release` should then be about 2 MB. An exe of about 59 KB means the merge did not happen.
 
 ## Project layout
 
 ```text
-EnterprisePOS.slnx
+LeoMoPOS.slnx
 Database/                   The instructor's original SQL Server scripts (reference only)
-EnterprisePOS.Domain/       Entities.cs: User, Product, Order, CartLine, report rows
-EnterprisePOS.Data/         The built-in database and the repositories
-  SqliteDb.cs               Opens pos.db, creates it on the first start, write transactions
+LeoMoPOS.Domain/       Entities.cs: User, Product, Order, CartLine, report rows
+LeoMoPOS.Data/         The built-in database and the repositories
+  SqliteDb.cs               Opens mori.db, creates it on the first start, write transactions
   PosDatabase.sql           Tables and sample data (embedded in the program)
   NativeLibraries.cs        Unpacks and loads SQLite's native file from inside the exe
   Native/x86, Native/x64    SQLite.Interop.dll, SQLite's own native file (embedded)
   Repositories.cs           SQL for users, products, orders and reports
   Security.cs               Password hashing
-EnterprisePOS.Services/     Services.cs: business rules and role checks
-EnterprisePOS/              The Windows Forms app (startup project)
+LeoMoPOS.Services/     Services.cs: business rules and role checks
+LeoMoPOS/              The Windows Forms app (startup project)
   Program.cs                Start-up, global error handler, log file
   LoginForm.cs, MainForm.cs
   ProductForm.cs, ProductEditorForm.cs, StockadjustForm.cs
@@ -94,19 +94,19 @@ Rule of the layers: a form never runs SQL, and a repository never shows a messag
 
 ## Build from source
 
-1. Open `EnterprisePOS.slnx` in Visual Studio.
-2. Set `EnterprisePOS` as the startup project and press F5.
+1. Open `LeoMoPOS.slnx` in Visual Studio.
+2. Set `LeoMoPOS` as the startup project and press F5.
 
 To build the single exe:
 
 1. Switch the configuration to **Release**, then choose Build > Rebuild Solution.
-2. Take `EnterprisePOS\bin\Release\EnterprisePOS.exe`. Costura.Fody merges the DLLs into it and SQLite's native files travel inside it, so this one file is all that has to be copied to another PC.
+2. Take `LeoMoPOS\bin\Release\LeoMoPOS.exe`. Costura.Fody merges the DLLs into it and SQLite's native files travel inside it, so this one file is all that has to be copied to another PC.
 
 ## Repository notes
 
 - This repository is private. The instructor's handouts (PDF files) are not part of it.
 - `.gitignore` covers build output, `packages/`, backups, logs and PDF files.
-- The two `SQLite.Interop.dll` files under `EnterprisePOS.Data/Native` are SQLite's own binaries. They are committed on purpose, since the program embeds them.
+- The two `SQLite.Interop.dll` files under `LeoMoPOS.Data/Native` are SQLite's own binaries. They are committed on purpose, since the program embeds them.
 
 ## License
 
