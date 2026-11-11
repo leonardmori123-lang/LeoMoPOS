@@ -49,7 +49,7 @@ These are shared demo passwords. Change them (Administration > Users > Reset Pas
 - Every write runs in a `BEGIN IMMEDIATE` transaction. If a second copy of the program writes at the same moment, it waits up to 10 seconds and then sees the updated stock.
 - SQLite needs a native file, `SQLite.Interop.dll`. The x86 and x64 versions are embedded in the program (`EnterprisePOS.Data/Native`) and unpacked to `%LocalAppData%\EnterprisePOS\native` on the first start.
 - The data stays on the PC that runs the program. Copies on other PCs have their own databases.
-- The `Database` folder holds the instructor's original SQL Server scripts, kept as a reference. The program does not use them.
+- The `Database` folder holds the instructor's original SQL Server scripts, kept as a reference. The database name in them is changed to `mori`, following the class naming rule. The program does not use them.
 
 ## Requirements
 
